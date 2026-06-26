@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+![VITADATA Logo](public/logo.png)
+
+# VITADATA
+
+VITADATA is a technology startup building modern healthcare software for hospitals, doctors, administrators, and patients. This web app is the front end for the platform, with flows for onboarding, authentication, hospital setup, and operational dashboards.
+
+## What this project includes
+
+- Landing page with role-based entry points
+- Admin login, signup, and OTP verification flows
+- Hospital setup flow
+- Dashboard access protection
+- SEO metadata and Open Graph tags
+
+## Tech Stack
+
+- Next.js App Router
+- React
+- Tailwind CSS
+- Backend API integration via `NEXT_PUBLIC_URL`
 
 ## Getting Started
 
-First, run the development server:
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Create a `.env.local` file and set your API base URL:
+
+```bash
+NEXT_PUBLIC_URL=http://localhost:5000
+```
+
+3. Start the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+4. Open the app:
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+```bash
+http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Environment Variables
 
-## Learn More
+- `NEXT_PUBLIC_URL`: Base URL for the backend API
 
-To learn more about Next.js, take a look at the following resources:
+## Project Structure
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `src/app/page.js` - landing page
+- `src/app/admin/page.js` - admin login
+- `src/app/adminSignup/page.js` - admin signup
+- `src/app/otpVerification/page.js` - OTP verification
+- `src/app/hospitalSetup/page.js` - hospital creation
+- `src/app/layout.js` - global layout and SEO metadata
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Notes
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- The app uses `/logo.png` from the `public` folder for branding, icons, and social previews.
+- Dashboard routes are protected using the app's route guard setup.
