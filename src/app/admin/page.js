@@ -20,8 +20,8 @@ const GoogleIcon = () => (
     </svg>
 );
 
-export default function DoctorLoginPage() {
-    const [email, setEmail] = useState("");
+export default function AdminLoginPage() {
+    const [phoneNumber, setPhoneNumber] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -39,28 +39,29 @@ export default function DoctorLoginPage() {
                 throw new Error("something went wrong");
             }
 
-            const response = await fetch(`${apiBaseUrl}/admin/login`, {
+            const response = await fetch(`${apiBaseUrl}/auth/login/password`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ email, password }),
+                body: JSON.stringify({ phoneNumber, password }),
             });
 
             const data = await response.json();
 
-            if (!response.ok || !data?.success) {
-                throw new Error(data?.message || 'Login failed');
+            if (!response.ok || data?.status !== 'OK' || !data?.accessToken) {
+                throw new Error(data?.error || data?.message || 'Login failed');
             }
 
-            if (data?.token) {
-                localStorage.setItem('adminToken', data.token);
-                document.cookie = `admin_token=${encodeURIComponent(data.token)}; path=/; max-age=86400; samesite=lax`;
+            const adminRoles = ['SUPER_ADMIN', 'HOSPITAL_ADMIN'];
+            if (!data?.roles?.some((role) => adminRoles.includes(role))) {
+                throw new Error('This account does not have administrator access');
             }
 
-            if (data?.email) {
-                localStorage.setItem('adminEmail', data.email);
-            }
+            localStorage.setItem('adminToken', data.accessToken);
+            localStorage.setItem('adminRoles', JSON.stringify(data.roles));
+            localStorage.setItem('adminUser', JSON.stringify(data.user));
+            document.cookie = `admin_token=${encodeURIComponent(data.accessToken)}; path=/; max-age=900; samesite=lax`;
 
             router.push('/dashboard');
         } catch (err) {
@@ -100,13 +101,13 @@ export default function DoctorLoginPage() {
                 <form className="w-full" onSubmit={handleSubmit}>
 
                     <div className="mb-3.5">
-                        <label className="block text-[#374151] text-[12px] sm:text-[13px] font-medium mb-1.5">Email Address</label>
+                        <label className="block text-[#374151] text-[12px] sm:text-[13px] font-medium mb-1.5">Phone Number</label>
                         <input
-                            type="email"
-                            placeholder="Enter your email"
+                            type="tel"
+                            placeholder="Enter phone number, e.g. +919900000701"
                             className="w-full px-3 py-2 sm:px-4 sm:py-2.5 rounded-lg border border-[rgba(255,204,172,0.4)] focus:outline-none focus:ring-2 focus:ring-[#D97757]/20 focus:border-[#D97757] text-[13px] sm:text-[14px] text-[#3D2010]"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
+                            value={phoneNumber}
+                            onChange={(e) => setPhoneNumber(e.target.value)}
                             required
                         />
                     </div>
@@ -160,7 +161,7 @@ export default function DoctorLoginPage() {
 
                 {/* Footer Link */}
                 <p className="text-[#9C8276] text-[14px]">
-                    Don't have an account?{' '}
+                    Don&apos;t have an account?{' '}
                     <Link href={"./adminSignup"} className="text-[#D97757] hover:underline font-medium focus:outline-none">
                         Sign up
                     </Link>
