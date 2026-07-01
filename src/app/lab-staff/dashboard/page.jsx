@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const navItems = [
@@ -98,38 +98,113 @@ function SectionHeader({ title, description, action }) {
 }
 
 function DataTable({ columns, rows, keyFor, emptyMessage }) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  const filteredRows = useMemo(() => {
+    if (!searchQuery) return rows;
+    const query = searchQuery.toLowerCase();
+    
+    const searchVal = (val) => {
+      if (val === null || val === undefined) return false;
+      if (typeof val === "object") {
+        return Object.values(val).some(sub => searchVal(sub));
+      }
+      return String(val).toLowerCase().includes(query);
+    };
+
+    return rows.filter((row) => {
+      return Object.values(row).some((val) => searchVal(val));
+    });
+  }, [rows, searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
+  const totalPages = Math.ceil(filteredRows.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedRows = filteredRows.slice(startIndex, endIndex);
+
   return (
-    <div className="overflow-hidden rounded-2xl border border-[#EEDFD7] bg-white shadow-sm">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] border-collapse text-left">
-          <thead className="bg-[#FFF9F5]">
-            <tr>
-              {columns.map((column) => (
-                <th
-                  key={column.label}
-                  className="border-b border-[#EEDFD7] px-5 py-3.5 text-[11px] font-bold uppercase tracking-[0.1em] text-[#8B7469]"
-                >
-                  {column.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr key={keyFor(row, index)} className="transition-colors hover:bg-[#FFFCFA]">
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <div className="relative w-full max-w-xs">
+          <input
+            type="text"
+            placeholder="Search..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full rounded-xl border border-[#EEDFD7] bg-white px-4 py-2 text-sm text-[#3D2010] placeholder-[#9C8276] outline-none transition-all focus:border-[#D97757] focus:ring-1 focus:ring-[#D97757]"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-2.5 text-xs text-[#9C8276] hover:text-[#3D2010]"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-[#EEDFD7] bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] border-collapse text-left">
+            <thead className="bg-[#FFF9F5]">
+              <tr>
                 {columns.map((column) => (
-                  <td key={column.label} className="border-b border-[#F3EAE5] px-5 py-4 text-sm text-[#554238] last:border-b-0">
-                    {column.render(row)}
-                  </td>
+                  <th
+                    key={column.label}
+                    className="border-b border-[#EEDFD7] px-5 py-3.5 text-[11px] font-bold uppercase tracking-[0.1em] text-[#8B7469]"
+                  >
+                    {column.label}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {paginatedRows.map((row, index) => (
+                <tr key={keyFor(row, index)} className="transition-colors hover:bg-[#FFFCFA]">
+                  {columns.map((column) => (
+                    <td key={column.label} className="border-b border-[#F3EAE5] px-5 py-4 text-sm text-[#554238] last:border-b-0">
+                      {column.render(row)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {filteredRows.length === 0 && (
+          <div className="px-6 py-14 text-center text-sm text-[#9C8276]">{emptyMessage}</div>
+        )}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between border-t border-[#EEDFD7] bg-[#FFF9F5] px-6 py-4">
+            <span className="text-xs text-[#7A655B]">
+              Showing {startIndex + 1} to {Math.min(endIndex, filteredRows.length)} of {filteredRows.length} entries
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="rounded-lg border border-[#F2D7C8] bg-white px-3 py-1.5 text-xs font-semibold text-[#D97757] hover:bg-[#FFF4EC] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                className="rounded-lg border border-[#F2D7C8] bg-white px-3 py-1.5 text-xs font-semibold text-[#D97757] hover:bg-[#FFF4EC] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
-      {rows.length === 0 && (
-        <div className="px-6 py-14 text-center text-sm text-[#9C8276]">{emptyMessage}</div>
-      )}
     </div>
   );
 }
@@ -158,6 +233,7 @@ export default function LabStaffDashboard() {
   const [labTests, setLabTests] = useState([]);
   const [labResults, setLabResults] = useState([]);
   const [encounters, setEncounters] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
 
   // Form States
   const [resultForm, setResultForm] = useState({
@@ -294,6 +370,7 @@ export default function LabStaffDashboard() {
     setError("");
     setSuccessMsg("");
     const token = localStorage.getItem("labStaffToken");
+    setSubmitting(true);
 
     try {
       const res = await fetch(`${apiBaseUrl}/lab-managers/lab-results`, {
@@ -329,6 +406,8 @@ export default function LabStaffDashboard() {
       setActiveNav("Lab Results Log");
     } catch (err) {
       setError(err.message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -337,6 +416,7 @@ export default function LabStaffDashboard() {
     setError("");
     setSuccessMsg("");
     const token = localStorage.getItem("labStaffToken");
+    setSubmitting(true);
 
     try {
       const res = await fetch(`${apiBaseUrl}/lab-managers/lab-tests`, {
@@ -370,6 +450,8 @@ export default function LabStaffDashboard() {
       setActiveNav("Lab Test Catalog");
     } catch (err) {
       setError(err.message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -579,9 +661,9 @@ export default function LabStaffDashboard() {
       )}
 
       {/* Sidebar */}
-      <aside className={`fixed bottom-0 left-0 top-0 z-50 flex w-[250px] shrink-0 flex-col border-r border-[#EEDFD7] bg-white transition-transform duration-300 lg:static ${isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
-        <button onClick={() => setActiveNav("Dashboard")} className="flex h-[82px] items-center border-b border-[#EEDFD7] px-6 text-left">
-          <Image src="/logo.png" alt="VitaData Solutions" width={112} height={56} className="h-auto w-[112px] object-contain object-left" priority />
+      <aside className={`fixed bottom-0 left-0 top-0 z-50 flex w-[250px] shrink-0 flex-col border-r border-[#EEDFD7] bg-white transition-transform duration-300 lg:sticky lg:top-0 lg:h-screen ${isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
+        <button onClick={() => setActiveNav("Dashboard")} className="flex h-[74px] items-center border-b border-[#EEDFD7] px-6 text-left">
+          <Image src="/logo.png" alt="VitaData Solutions" width={112} height={56} className="h-12 w-auto object-contain object-left" priority />
         </button>
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="space-y-1">
@@ -652,6 +734,15 @@ export default function LabStaffDashboard() {
 
         <button onClick={() => { window.location.href = "mailto:support@vitadata.example"; }} className="fixed bottom-5 right-5 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-[#3D2010] text-lg font-bold text-white shadow-lg transition-colors hover:bg-[#D97757]">?</button>
       </div>
+      {submitting && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl border border-[#EEDFD7] p-8 shadow-2xl flex flex-col items-center max-w-sm text-center">
+            <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#F3DED2] border-t-[#D97757] mb-4" />
+            <h3 className="font-bold text-lg text-[#3D2010] mb-1">Processing Request</h3>
+            <p className="text-sm text-[#8B7469]">Please do not close this window or navigate away while we update the system.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
