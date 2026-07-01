@@ -40,10 +40,18 @@ const LabStaffIcon = () => (
   </svg>
 );
 
+const PatientIcon = () => (
+  <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#D97757" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+    <circle cx="12" cy="7" r="4" />
+  </svg>
+);
+
 /* ──────────────────────────────────────────────────────────────────────── */
 
 const roles = [
-  { id: 'admin', label: 'admin', icon: AdminIcon, page: 'admin' },
+  { id: 'patient', label: 'Patient', icon: PatientIcon, page: 'patient-login' },
+  { id: 'admin', label: 'Admin', icon: AdminIcon, page: 'admin' },
   { id: 'doctor', label: 'Doctor', icon: DoctorIcon, page: 'doctor-login' },
   { id: 'receptionist', label: 'Receptionist', icon: ReceptionistIcon, page: 'login' },
   { id: 'lab-staff', label: 'Lab Staff', icon: LabStaffIcon, page: 'login' },

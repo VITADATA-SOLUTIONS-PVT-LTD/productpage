@@ -474,6 +474,40 @@ export default function AdminDashboard() {
     return () => window.clearTimeout(timer);
   }, [loadDashboard]);
 
+  useEffect(() => {
+    const token = localStorage.getItem("adminToken");
+    let expiryTimer;
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        const remaining = (payload.exp * 1000) - Date.now();
+        if (remaining <= 0) {
+          logout();
+        } else {
+          expiryTimer = setTimeout(() => {
+            alert("Your session has expired. You are being logged out.");
+            logout();
+          }, remaining);
+        }
+      } catch (e) {}
+    }
+
+    window.history.pushState(null, "", window.location.href);
+    const handlePopState = () => {
+      window.history.pushState(null, "", window.location.href);
+      const confirmLogout = window.confirm("Do you want to log out of your session?");
+      if (confirmLogout) {
+        logout();
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      if (expiryTimer) clearTimeout(expiryTimer);
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [logout]);
+
   const selectedHospital = useMemo(
     () => data?.hospitals?.find((hospital) => hospital.hospitalId === selectedHospitalId),
     [data, selectedHospitalId],
