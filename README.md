@@ -48,6 +48,20 @@ http://localhost:3000
 ## Environment Variables
 
 - `NEXT_PUBLIC_URL`: Base URL for the backend API
+- `NEXT_PUBLIC_SITE_URL`: Public site URL for SEO metadata (example: `https://your-app.onrender.com`)
+
+## Render Static Deploy
+
+Use these settings when creating a Render Static Site:
+
+- Root Directory: `productpage`
+- Build Command: `npm install && npm run build`
+- Publish Directory: `out`
+
+Important notes:
+
+- Do not use `dist` as the publish directory for this app.
+- This project is configured with Next.js static export (`output: 'export'`).
 
 ## Project Structure
 

@@ -1,7 +1,8 @@
 "use client";
 
+import React from "react";
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const navItems = [
@@ -100,7 +101,7 @@ function DataTable({ columns, rows, keyFor, emptyMessage }) {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  const filteredRows = useMemo(() => {
+  const filteredRows = React.useMemo(() => {
     if (!searchQuery) return rows;
     const query = searchQuery.toLowerCase();
     
@@ -583,7 +584,7 @@ export default function AdminDashboard() {
     };
   }, [logout]);
 
-  const selectedHospital = useMemo(
+  const selectedHospital = React.useMemo(
     () => data?.hospitals?.find((hospital) => hospital.hospitalId === selectedHospitalId),
     [data, selectedHospitalId],
   );

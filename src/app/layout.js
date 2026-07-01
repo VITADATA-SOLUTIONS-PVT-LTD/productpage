@@ -11,7 +11,10 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://vitadata.onrender.com";
+
 export const metadata = {
+  metadataBase: new URL(siteUrl),
   title: {
     default: "VITADATA",
     template: "%s | VITADATA",

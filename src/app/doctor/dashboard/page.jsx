@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -108,7 +109,7 @@ function DataTable({ columns, rows, keyFor, emptyMessage }) {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  const filteredRows = useMemo(() => {
+  const filteredRows = React.useMemo(() => {
     if (!searchQuery) return rows;
     const query = searchQuery.toLowerCase();
     
