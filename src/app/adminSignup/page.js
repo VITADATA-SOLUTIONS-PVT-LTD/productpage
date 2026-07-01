@@ -91,9 +91,8 @@ export default function CreateAdminAccount() {
     <div className="min-h-screen bg-[#F5F0EB] px-2 py-8">
       {/* Back to Home */}
       <div className="max-w-2xl mx-auto mb-4">
-        <Link href={"/"}>
-        <button
-        
+        <Link
+          href="/"
           className="inline-flex items-center gap-1.5 text-sm font-medium transition-colors duration-150"
           style={{ color: '#3D2010' }}
           onMouseEnter={e => { e.currentTarget.style.color = '#D97757'; }}
@@ -103,7 +102,6 @@ export default function CreateAdminAccount() {
             <path d="M19 12H5M12 5l-7 7 7 7" />
           </svg>
           Back to Home
-        </button>
         </Link>
       </div>
 

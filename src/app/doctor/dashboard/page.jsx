@@ -294,6 +294,34 @@ function LoadingState() {
   );
 }
 
+function getDoctorIdentity(profile) {
+  return {
+    doctorId: profile?.doctor?.doctorId || null,
+    userId: profile?.user?.userId || null,
+  };
+}
+
+function isCurrentDoctorEncounter(encounter, doctorIdentity) {
+  if (!encounter || !doctorIdentity.doctorId) return false;
+  return encounter.doctorId === doctorIdentity.doctorId;
+}
+
+function isCurrentDoctorPrescription(prescription, doctorIdentity) {
+  if (!prescription || !doctorIdentity.doctorId) return false;
+  return prescription.encounter?.doctorId === doctorIdentity.doctorId;
+}
+
+function uniquePatientsFromEncounters(encounters) {
+  const seen = new Set();
+  return encounters.reduce((list, encounter) => {
+    const patient = encounter?.patient;
+    if (!patient?.patientId || seen.has(patient.patientId)) return list;
+    seen.add(patient.patientId);
+    list.push(patient);
+    return list;
+  }, []);
+}
+
 // Medicine Search Component
 function MedicineSearchInput({ value, onChange, placeholder, apiBaseUrl }) {
   const [searchText, setSearchText] = useState("");
@@ -427,6 +455,21 @@ export default function DoctorDashboard() {
     { medicineId: "", dosage: "", times: { morning: false, afternoon: false, night: false }, durationDays: 5 }
   ]);
 
+  const doctorIdentity = React.useMemo(() => getDoctorIdentity(profile), [profile]);
+  const scopedPatients = React.useMemo(
+    () => {
+      const doctorEncounters = appointments.filter((encounter) => isCurrentDoctorEncounter(encounter, doctorIdentity));
+      const doctorPatients = uniquePatientsFromEncounters(doctorEncounters);
+      const visiblePatientIds = new Set(doctorPatients.map((patient) => patient.patientId));
+      return patients.filter((patient) => visiblePatientIds.has(patient.patientId));
+    },
+    [appointments, doctorIdentity, patients],
+  );
+  const scopedPrescriptions = React.useMemo(
+    () => prescriptions.filter((prescription) => isCurrentDoctorPrescription(prescription, doctorIdentity)),
+    [prescriptions, doctorIdentity],
+  );
+
   const logout = useCallback(() => {
     localStorage.removeItem("doctorToken");
     localStorage.removeItem("doctorRoles");
@@ -464,15 +507,13 @@ export default function DoctorDashboard() {
       const docId = currentProfile?.doctor?.doctorId;
 
       // 2. Encounters (dynamic)
-      const encountersRes = await fetch(`${apiBaseUrl}/encounters`, {
+      const encountersUrl = docId ? `${apiBaseUrl}/encounters?doctorId=${encodeURIComponent(docId)}` : `${apiBaseUrl}/encounters`;
+      const encountersRes = await fetch(encountersUrl, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (encountersRes.ok) {
         const encountersData = await encountersRes.json();
-        const filtered = Array.isArray(encountersData) 
-          ? (docId ? encountersData.filter(e => e.doctorId === docId) : encountersData)
-          : [];
-        setAppointments(filtered);
+        setAppointments(Array.isArray(encountersData) ? encountersData : []);
       }
 
       // 3. Patients (dynamic)
@@ -1164,7 +1205,7 @@ export default function DoctorDashboard() {
   };
 
   const renderManagePrescriptions = () => {
-    const patientPrescs = prescriptions.filter(p => p.encounter?.patientId === managingPatient.patientId);
+    const patientPrescs = scopedPrescriptions.filter(p => p.encounter?.patientId === managingPatient.patientId);
     
     return (
       <div className="space-y-6">
@@ -1211,7 +1252,7 @@ export default function DoctorDashboard() {
               emptyMessage="No prescription sheets registered for this patient."
               columns={[
                 { label: "Date", render: (row) => formatDate(row.generatedAt || row.encounter?.scheduledTime) },
-                { label: "Doctor", render: (row) => row.encounter?.doctor?.name || "Consultant" },
+                { label: "Doctor", render: (row) => fullName(row.encounter?.doctor?.user) },
                 { label: "Diagnosis Summary", render: (row) => row.encounter?.diagnoses?.[0]?.diagnosisText || row.encounter?.diagnosis || "—" },
                 {
                   label: "Medications",
@@ -1305,7 +1346,7 @@ export default function DoctorDashboard() {
         <>
           <SectionHeader title="Clinical Patients Registry" description="View details of registered patients in your scope." />
           <DataTable
-            rows={patients}
+            rows={scopedPatients}
             keyFor={(row) => row.patientId}
             emptyMessage="No patients assigned."
             columns={[

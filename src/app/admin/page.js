@@ -80,10 +80,8 @@ export default function AdminLoginPage() {
 
                 {/* Logo */}
                 <div className="flex flex-col items-center mb-2">
-                    <Link href={"./"}>
-                    <button  className="border-none bg-transparent cursor-pointer p-0" title="Back to Home">
+                    <Link href="/" className="border-none bg-transparent cursor-pointer p-0" title="Back to Home">
                         <img src="/logo.png" alt="VitaData Solutions" className="w-21.25 sm:w-25 h-auto object-contain mb-1" />
-                    </button>
                     </Link>
                 </div>
 
@@ -175,17 +173,13 @@ export default function AdminLoginPage() {
             </button>
 
             {/* Back to Home Link */}
-           <Link href={"./"}>
-            <button
-                
-                className="absolute top-4 left-4 sm:top-8 sm:left-8 flex items-center gap-2 text-[#3D2010] hover:text-[#D97757] font-medium transition-colors text-[14px] sm:text-[16px] z-20"
-            >
+           <Link href="/" className="absolute top-4 left-4 sm:top-8 sm:left-8 flex items-center gap-2 text-[#3D2010] hover:text-[#D97757] font-medium transition-colors text-[14px] sm:text-[16px] z-20">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="19" y1="12" x2="5" y2="12" />
                     <polyline points="12 19 5 12 12 5" />
                 </svg>
                 Back to Home
-            </button></Link>
+            </Link>
 
         </div>
     );
