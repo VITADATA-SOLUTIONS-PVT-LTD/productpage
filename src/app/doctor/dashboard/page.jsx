@@ -2,8 +2,9 @@
 
 import React from "react";
 import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import DashboardCalendar from "@/components/DashboardCalendar";
 
 const navItems = [
   "Dashboard",
@@ -104,7 +105,7 @@ function SectionHeader({ title, description, action }) {
   );
 }
 
-function DataTable({ columns, rows, keyFor, emptyMessage }) {
+function DataTable({ columns, rows, keyFor, emptyMessage, filterSlot }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -137,8 +138,11 @@ function DataTable({ columns, rows, keyFor, emptyMessage }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <div className="relative w-full max-w-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3 w-full">
+          {filterSlot}
+        </div>
+        <div className="relative w-full sm:max-w-xs shrink-0">
           <input
             type="text"
             placeholder="Search..."
@@ -428,6 +432,28 @@ export default function DoctorDashboard() {
   const [vitalTypes, setVitalTypes] = useState([]);
   const [prescriptions, setPrescriptions] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const [queueDate, setQueueDate] = useState(new Date().toISOString().split("T")[0]);
+  const [queueHospitalId, setQueueHospitalId] = useState("");
+
+  // Profile & Modal States
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [editProfileForm, setEditProfileForm] = useState({
+    emergencyContact: "",
+    isAvailable: true,
+    consultationFee: "",
+  });
+
+  useEffect(() => {
+    if (profile) {
+      setEditProfileForm({
+        emergencyContact: profile.emergencyContact || "",
+        isAvailable: profile.doctor?.isAvailable !== false,
+        consultationFee: profile.doctor?.consultationFee || "500",
+      });
+    }
+  }, [profile]);
 
   // Sub-Navigation / Modal States
   const [managingPatient, setManagingPatient] = useState(null);
@@ -470,6 +496,52 @@ export default function DoctorDashboard() {
     [prescriptions, doctorIdentity],
   );
 
+  const doctorEvents = useMemo(() => {
+    return appointments.map(a => ({
+      date: a.scheduledTime ? a.scheduledTime.split("T")[0] : "",
+      type: a.visitType || "Consultation",
+      title: `Consultation: ${fullName(a.patient?.user)}`,
+      time: formatDate(a.scheduledTime, true).split(" - ")[1] || formatDate(a.scheduledTime, true),
+      details: `Reason: ${a.reason || "General checkup"} (${a.status})`
+    })).filter(e => e.date);
+  }, [appointments]);
+
+  const doctorHospitals = useMemo(() => {
+    const list = [];
+    const seen = new Set();
+    appointments.forEach(a => {
+      if (a.hospital && !seen.has(a.hospitalId)) {
+        seen.add(a.hospitalId);
+        list.push(a.hospital);
+      }
+    });
+    return list;
+  }, [appointments]);
+
+  useEffect(() => {
+    if (doctorHospitals.length > 0 && !queueHospitalId) {
+      setQueueHospitalId(doctorHospitals[0].hospitalId);
+    }
+  }, [doctorHospitals, queueHospitalId]);
+
+  const filteredQueue = useMemo(() => {
+    return appointments.filter(a => {
+      const apptDate = a.scheduledTime ? a.scheduledTime.split("T")[0] : "";
+      const dateMatch = apptDate === queueDate;
+      const hospitalMatch = !queueHospitalId || a.hospitalId === queueHospitalId;
+      return dateMatch && hospitalMatch;
+    });
+  }, [appointments, queueDate, queueHospitalId]);
+
+  const filteredActiveEncounters = useMemo(() => {
+    return appointments.filter(enc => enc.status === "SCHEDULED" || enc.status === "IN_PROGRESS").filter(a => {
+      const apptDate = a.scheduledTime ? a.scheduledTime.split("T")[0] : "";
+      const dateMatch = apptDate === queueDate;
+      const hospitalMatch = !queueHospitalId || a.hospitalId === queueHospitalId;
+      return dateMatch && hospitalMatch;
+    });
+  }, [appointments, queueDate, queueHospitalId]);
+
   const logout = useCallback(() => {
     localStorage.removeItem("doctorToken");
     localStorage.removeItem("doctorRoles");
@@ -489,20 +561,21 @@ export default function DoctorDashboard() {
     setLoading(true);
     setError("");
     try {
-      // 1. Profile Info (cached)
-      const cachedProfile = getCachedItem("doctor_cached_profile");
-      let currentProfile = cachedProfile;
-      if (!currentProfile) {
-        const profileRes = await fetch(`${apiBaseUrl}/users/myinfo`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (profileRes.ok) {
-          const profileData = await profileRes.json();
-          currentProfile = profileData.data;
-          setCachedItem("doctor_cached_profile", currentProfile);
-        }
+      // 1. Profile Info (always fresh to fetch hospitals list)
+      const profileRes = await fetch(`${apiBaseUrl}/users/myinfo`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      let currentProfile = null;
+      if (profileRes.ok) {
+        const profileData = await profileRes.json();
+        currentProfile = profileData.data;
       }
       setProfile(currentProfile);
+
+      const firstHospitalId = currentProfile?.doctor?.hospitals?.[0]?.hospital?.hospitalId;
+      if (firstHospitalId) {
+        setQueueHospitalId(prev => prev || firstHospitalId);
+      }
 
       const docId = currentProfile?.doctor?.doctorId;
 
@@ -631,6 +704,81 @@ export default function DoctorDashboard() {
       setError(err.message);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    const token = localStorage.getItem("doctorToken");
+    if (!token || !apiBaseUrl) return;
+
+    setSubmitting(true);
+    setError("");
+    try {
+      const res = await fetch(`${apiBaseUrl}/users/profile/update`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          emergencyContact: editProfileForm.emergencyContact,
+          isAvailable: editProfileForm.isAvailable,
+          consultationFee: editProfileForm.consultationFee,
+        }),
+      });
+
+      if (res.ok) {
+        setSuccessMsg("Profile updated successfully!");
+        setIsEditProfileOpen(false);
+        await loadData();
+      } else {
+        const data = await res.json();
+        setError(data.message || "Failed to update profile");
+      }
+    } catch (err) {
+      console.error(err);
+      setError("An error occurred while updating profile");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const token = localStorage.getItem("doctorToken");
+    if (!token || !apiBaseUrl) return;
+
+    setUploadingPhoto(true);
+    setError("");
+    setSuccessMsg("");
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await fetch(`${apiBaseUrl}/users/uploadProfile`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setSuccessMsg("Profile image updated successfully!");
+        await loadData();
+      } else {
+        const data = await res.json();
+        setError(data.message || "Failed to upload image");
+      }
+    } catch (err) {
+      console.error(err);
+      setError("An error occurred during upload");
+    } finally {
+      setUploadingPhoto(false);
     }
   };
 
@@ -906,47 +1054,53 @@ export default function DoctorDashboard() {
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <MetricCard label="Today's Appointments" value={todayAppointments.length} detail="Assigned scheduled cases" />
           <MetricCard label="Active Consultations" value={activeVisits.length} detail="In progress right now" tone="blue" />
-          <MetricCard label="Total Prescriptions Issued" value={prescriptions.length} detail="Recorded clinical catalog" tone="green" />
+          <MetricCard label="Total Prescriptions Issued" value={scopedPrescriptions.length} detail="Recorded clinical catalog" tone="green" />
         </div>
 
-        <div>
-          <SectionHeader title="Clinical Schedule" description="Today's patient consultation queue." />
-          <DataTable
-            rows={todayAppointments}
-            keyFor={(row) => row.encounterId}
-            emptyMessage="No consultation schedule recorded for today."
-            columns={[
-              { label: "Token", render: (row) => <span className="font-bold text-[#D97757]">#{row.tokenNo || 1}</span> },
-              { label: "Patient", render: (row) => fullName(row.patient?.user) },
-              { label: "Gender/DOB", render: (row) => `${row.patient?.gender || "—"}, ${formatDate(row.patient?.dob)}` },
-              { label: "Scheduled", render: (row) => formatDate(row.scheduledTime, true) },
-              { label: "Reason", render: (row) => row.reason || "General Checkup" },
-              { label: "Status", render: (row) => <StatusBadge value={row.status} /> },
-              {
-                label: "Consultation Actions",
-                render: (row) => (
-                  <div className="flex gap-2">
-                    {row.status === "SCHEDULED" && (
-                      <button
-                        onClick={() => handleUpdateStatus(row.encounterId, "IN_PROGRESS")}
-                        className="rounded-lg bg-[#3D2010] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#D97757]"
-                      >
-                        Start Consultation
-                      </button>
-                    )}
-                    {row.status === "IN_PROGRESS" && (
-                      <button
-                        onClick={() => handleUpdateStatus(row.encounterId, "COMPLETED")}
-                        className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
-                      >
-                        Complete Consultation
-                      </button>
-                    )}
-                  </div>
-                ),
-              },
-            ]}
-          />
+        <div className="grid gap-6 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <SectionHeader title="Clinical Schedule" description="Today's patient consultation queue." />
+            <DataTable
+              rows={todayAppointments}
+              keyFor={(row) => row.encounterId}
+              emptyMessage="No consultation schedule recorded for today."
+              columns={[
+                { label: "Token", render: (row) => <span className="font-bold text-[#D97757]">#{row.tokenNo || 1}</span> },
+                { label: "Patient", render: (row) => fullName(row.patient?.user) },
+                { label: "Gender/DOB", render: (row) => `${row.patient?.gender || "—"}, ${formatDate(row.patient?.dob)}` },
+                { label: "Scheduled", render: (row) => formatDate(row.scheduledTime, true) },
+                { label: "Reason", render: (row) => row.reason || "General Checkup" },
+                { label: "Status", render: (row) => <StatusBadge value={row.status} /> },
+                {
+                  label: "Consultation Actions",
+                  render: (row) => (
+                    <div className="flex gap-2">
+                      {row.status === "SCHEDULED" && (
+                        <button
+                          onClick={() => handleUpdateStatus(row.encounterId, "IN_PROGRESS")}
+                          className="rounded-lg bg-[#3D2010] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#D97757]"
+                        >
+                          Start Consultation
+                        </button>
+                      )}
+                      {row.status === "IN_PROGRESS" && (
+                        <button
+                          onClick={() => handleUpdateStatus(row.encounterId, "COMPLETED")}
+                          className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                        >
+                          Complete Consultation
+                        </button>
+                      )}
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          </div>
+
+          <div>
+            <DashboardCalendar events={doctorEvents} />
+          </div>
         </div>
       </div>
     );
@@ -958,6 +1112,35 @@ export default function DoctorDashboard() {
         <h2 className="text-xl font-bold text-[#3D2010] mb-4">
           {editingPrescription ? `Edit Prescription Sheet` : "New Prescription Sheet"}
         </h2>
+
+        {!editingPrescription && (
+          <div className="flex flex-wrap items-center gap-4 mb-6 p-4 rounded-xl bg-[#FFF9F5] border border-[#EEDFD7]">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-[#8B7469] uppercase tracking-wider font-sans">Filter Date:</span>
+              <input
+                type="date"
+                value={queueDate}
+                onChange={e => setQueueDate(e.target.value)}
+                className="rounded-xl border border-[#EEDFD7] bg-white px-3 py-1.5 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-[#8B7469] uppercase tracking-wider font-sans">Filter Hospital:</span>
+              <select
+                value={queueHospitalId}
+                onChange={e => setQueueHospitalId(e.target.value)}
+                className="rounded-xl border border-[#EEDFD7] bg-white px-3 py-1.5 text-sm text-[#3D2010] outline-none focus:border-[#D97757] max-w-[200px]"
+              >
+                {doctorHospitals.map(h => (
+                  <option key={h.hospitalId} value={h.hospitalId}>
+                    {h.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
         <form onSubmit={handlePrescribe} className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
@@ -966,8 +1149,8 @@ export default function DoctorDashboard() {
                 value={prescriptionMeta.encounterId}
                 onChange={(val) => setPrescriptionMeta({ ...prescriptionMeta, encounterId: val })}
                 options={(editingPrescription 
-                  ? [editingPrescription.encounter, ...activeEncounters.filter(e => e.encounterId !== editingPrescription.encounterId)].filter(Boolean)
-                  : activeEncounters
+                  ? [editingPrescription.encounter, ...filteredActiveEncounters.filter(e => e.encounterId !== editingPrescription.encounterId)].filter(Boolean)
+                  : filteredActiveEncounters
                 ).map(enc => ({
                   id: enc.encounterId,
                   name: `${fullName(enc.patient?.user)} - ${formatDate(enc.scheduledTime)} (${enc.status})`
@@ -1152,13 +1335,40 @@ export default function DoctorDashboard() {
     return (
       <div className="bg-white rounded-2xl border border-[#EEDFD7] p-6 shadow-sm max-w-2xl">
         <h2 className="text-xl font-bold text-[#3D2010] mb-4">Record Patient Vitals</h2>
+
+        <div className="flex flex-wrap items-center gap-4 mb-6 p-4 rounded-xl bg-[#FFF9F5] border border-[#EEDFD7]">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-[#8B7469] uppercase tracking-wider font-sans">Filter Date:</span>
+            <input
+              type="date"
+              value={queueDate}
+              onChange={e => setQueueDate(e.target.value)}
+              className="rounded-xl border border-[#EEDFD7] bg-white px-3 py-1.5 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-[#8B7469] uppercase tracking-wider font-sans">Filter Hospital:</span>
+            <select
+              value={queueHospitalId}
+              onChange={e => setQueueHospitalId(e.target.value)}
+              className="rounded-xl border border-[#EEDFD7] bg-white px-3 py-1.5 text-sm text-[#3D2010] outline-none focus:border-[#D97757] max-w-[200px]"
+            >
+              {doctorHospitals.map(h => (
+                <option key={h.hospitalId} value={h.hospitalId}>
+                  {h.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         <form onSubmit={handleRecordVital} className="space-y-4">
           <div>
             <AutocompleteSelect
               label="Select Appointment / Patient"
               value={vitalForm.encounterId}
               onChange={(val) => setVitalForm({ ...vitalForm, encounterId: val })}
-              options={activeEncounters.map(enc => ({
+              options={filteredActiveEncounters.map(enc => ({
                 id: enc.encounterId,
                 name: `${fullName(enc.patient?.user)} - ${formatDate(enc.scheduledTime)} (${enc.status})`
               }))}
@@ -1292,11 +1502,39 @@ export default function DoctorDashboard() {
       Dashboard: renderOverview(),
       "Appointments Queue": (
         <>
-          <SectionHeader title="Patient Consultation Queue" description="Log of scheduled checkups assigned to Dr. name." />
+          <SectionHeader title="Patient Consultation Queue" description="Log of scheduled checkups assigned to you." />
+          
           <DataTable
-            rows={appointments}
+            rows={filteredQueue}
             keyFor={(row) => row.encounterId}
             emptyMessage="No appointments scheduled."
+            filterSlot={
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-[#8B7469] uppercase tracking-wider font-sans">Date:</span>
+                  <input
+                    type="date"
+                    value={queueDate}
+                    onChange={e => setQueueDate(e.target.value)}
+                    className="rounded-xl border border-[#EEDFD7] bg-white px-3 py-1.5 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-[#8B7469] uppercase tracking-wider font-sans">Hospital:</span>
+                  <select
+                    value={queueHospitalId}
+                    onChange={e => setQueueHospitalId(e.target.value)}
+                    className="rounded-xl border border-[#EEDFD7] bg-white px-3 py-1.5 text-sm text-[#3D2010] outline-none focus:border-[#D97757] max-w-[200px]"
+                  >
+                    {doctorHospitals.map(h => (
+                      <option key={h.hospitalId} value={h.hospitalId}>
+                        {h.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            }
             columns={[
               { label: "Token", render: (row) => <span className="font-bold text-[#D97757]">#{row.tokenNo || 1}</span> },
               { label: "Patient", render: (row) => fullName(row.patient?.user) },
@@ -1387,9 +1625,11 @@ export default function DoctorDashboard() {
 
       {/* Sidebar */}
       <aside className={`fixed bottom-0 left-0 top-0 z-50 flex w-[250px] shrink-0 flex-col border-r border-[#EEDFD7] bg-white transition-transform duration-300 lg:sticky lg:top-0 lg:h-screen ${isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
-        <button onClick={() => { setActiveNav("Dashboard"); setManagingPatient(null); setIsPrescriptionFormOpen(false); }} className="flex h-[74px] items-center border-b border-[#EEDFD7] px-6 text-left">
-          <Image src="/logo.png" alt="VitaData Solutions" width={112} height={56} className="h-12 w-auto object-contain object-left" priority />
-        </button>
+        <div className="flex h-[74px] justify-center items-center border-b border-[#EEDFD7]">
+          <button onClick={() => { setActiveNav("Dashboard"); setManagingPatient(null); setIsPrescriptionFormOpen(false); }} className="flex justify-center items-center w-full h-full px-4">
+            <Image src="/logo.png" alt="VitaData Solutions" width={180} height={90} className="h-[60px] w-auto object-contain" priority />
+          </button>
+        </div>
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="space-y-1">
             {navItems.map((item) => (
@@ -1422,14 +1662,73 @@ export default function DoctorDashboard() {
             <p className="text-xs font-medium text-[#9C8276]">Clinical Workspace</p>
             <p className="text-sm font-bold text-[#3D2010]">{docSpecialization}</p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="hidden text-right sm:block">
-              <p className="text-sm font-semibold text-[#3D2010]">Dr. {doctorName}</p>
-              <p className="text-xs text-[#9C8276]">{docSpecialization}</p>
-            </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#F0CDBB] bg-[#FFF1E8] text-sm font-bold text-[#D97757]">
-              {doctorName.charAt(0)}
-            </div>
+          <div className="relative flex items-center gap-3">
+            <button 
+              onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+              className="flex items-center gap-3 focus:outline-none hover:opacity-90 text-left"
+            >
+              <div className="hidden text-right sm:block">
+                <p className="text-sm font-semibold text-[#3D2010]">Dr. {doctorName}</p>
+                <p className="text-xs text-[#9C8276]">{docSpecialization}</p>
+              </div>
+              {profile?.profile ? (
+                <img src={profile.profile} alt={doctorName} className="h-10 w-10 rounded-full border border-[#F0CDBB] object-cover" />
+              ) : (
+                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#F0CDBB] bg-[#FFF1E8] text-sm font-bold text-[#D97757]">
+                  {doctorName.charAt(0)}
+                </div>
+              )}
+            </button>
+
+            {isProfileDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsProfileDropdownOpen(false)} />
+                <div className="absolute right-0 top-12 z-50 w-56 rounded-2xl border border-[#EEDFD7] bg-white p-2 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="px-3 py-2 border-b border-[#F3EAE5] mb-1">
+                    <p className="text-xs text-[#9C8276] font-medium font-sans">Logged in as</p>
+                    <p className="text-sm font-bold text-[#3D2010]">Dr. {doctorName}</p>
+                  </div>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); setIsEditProfileOpen(true); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    Edit Profile
+                  </button>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); alert("Settings config: Theme & notifications preferences are set to auto-detect."); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    Settings
+                  </button>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); alert("Contact Us:\nSupport: support@vitadata.example\nPhone: +91-80-VITA-DATA"); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    Contact Us
+                  </button>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); alert("About VitaData:\nVersion 1.0.0 (Production)\nAdvanced Clinical Workspace Platform."); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    About Page
+                  </button>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); alert("Theme Selector:\nSystem theme is currently set to Warm Gold / Autumn Sunset (Aesthetic Default)."); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    Theme
+                  </button>
+                  <div className="border-t border-[#F3EAE5] mt-1 pt-1">
+                    <button
+                      onClick={() => { setIsProfileDropdownOpen(false); logout(); }}
+                      className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </header>
 
@@ -1467,6 +1766,122 @@ export default function DoctorDashboard() {
             <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#F3DED2] border-t-[#D97757] mb-4" />
             <h3 className="font-bold text-lg text-[#3D2010] mb-1">Processing Request</h3>
             <p className="text-sm text-[#8B7469]">Please do not close this window or navigate away while we update the system.</p>
+          </div>
+        </div>
+      )}
+
+      {isEditProfileOpen && (
+        <div className="fixed inset-0 z-[9990] flex items-center justify-center bg-black/45 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl border border-[#EEDFD7] p-6 shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-[#F3EAE5] pb-3 mb-5">
+              <h3 className="font-bold text-lg text-[#3D2010]">Edit Profile</h3>
+              <button onClick={() => setIsEditProfileOpen(false)} className="text-sm font-bold text-[#806B61] hover:text-red-500">Close</button>
+            </div>
+            
+            {/* Avatar Upload */}
+            <div className="flex flex-col items-center gap-3 mb-6">
+              <div className="relative">
+                {profile?.profile ? (
+                  <img src={profile.profile} alt="Avatar" className="h-20 w-20 rounded-full border-2 border-[#D97757] object-cover" />
+                ) : (
+                  <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-[#D97757] bg-[#FFF1E8] text-2xl font-bold text-[#D97757]">
+                    {doctorName.charAt(0)}
+                  </div>
+                )}
+                {uploadingPhoto && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full">
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  </div>
+                )}
+              </div>
+              <label className="cursor-pointer rounded-lg bg-[#3D2010] hover:bg-[#D97757] px-3 py-1.5 text-xs font-semibold text-white transition-colors">
+                Upload User Logo
+                <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" />
+              </label>
+            </div>
+
+            <form onSubmit={handleUpdateProfile} className="space-y-4">
+              {/* Blocked/Read-only Fields */}
+              <div>
+                <label className="block text-xs font-semibold text-[#8B7469] uppercase tracking-wider mb-1">Doctor ID (Verified)</label>
+                <input type="text" value={profile?.doctor?.doctorId || ""} disabled className="w-full rounded-xl border border-[#F2D7C8] bg-[#FFF9F5] px-4 py-2 text-sm text-[#806B61] cursor-not-allowed" />
+              </div>
+              
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-semibold text-[#8B7469] uppercase tracking-wider mb-1">Full Name (Verified)</label>
+                  <input type="text" value={`Dr. ${doctorName}`} disabled className="w-full rounded-xl border border-[#F2D7C8] bg-[#FFF9F5] px-4 py-2 text-sm text-[#806B61] cursor-not-allowed" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#8B7469] uppercase tracking-wider mb-1">Specialization (Verified)</label>
+                  <input type="text" value={profile?.doctor?.specialization || ""} disabled className="w-full rounded-xl border border-[#F2D7C8] bg-[#FFF9F5] px-4 py-2 text-sm text-[#806B61] cursor-not-allowed" />
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-semibold text-[#8B7469] uppercase tracking-wider mb-1">Phone Number (Verified)</label>
+                  <input type="text" value={profile?.phoneNumber || ""} disabled className="w-full rounded-xl border border-[#F2D7C8] bg-[#FFF9F5] px-4 py-2 text-sm text-[#806B61] cursor-not-allowed" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#8B7469] uppercase tracking-wider mb-1">Email Address (Verified)</label>
+                  <input type="text" value={profile?.email || ""} disabled className="w-full rounded-xl border border-[#F2D7C8] bg-[#FFF9F5] px-4 py-2 text-sm text-[#806B61] cursor-not-allowed" />
+                </div>
+              </div>
+
+              <hr className="border-[#F3EAE5]" />
+
+              {/* Editable Fields */}
+              <div>
+                <label className="block text-xs font-semibold text-[#554238] uppercase mb-1">Emergency Contact</label>
+                <input
+                  type="text"
+                  value={editProfileForm.emergencyContact}
+                  onChange={e => setEditProfileForm({ ...editProfileForm, emergencyContact: e.target.value })}
+                  className="w-full rounded-xl border border-[#E3D4CC] bg-white px-4 py-2 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+                  placeholder="+91..."
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-semibold text-[#554238] uppercase mb-1">Consultation Fee (INR)</label>
+                  <input
+                    type="number"
+                    value={editProfileForm.consultationFee}
+                    onChange={e => setEditProfileForm({ ...editProfileForm, consultationFee: e.target.value })}
+                    className="w-full rounded-xl border border-[#E3D4CC] bg-white px-4 py-2 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#554238] uppercase mb-1">Availability Status</label>
+                  <select
+                    value={editProfileForm.isAvailable ? "true" : "false"}
+                    onChange={e => setEditProfileForm({ ...editProfileForm, isAvailable: e.target.value === "true" })}
+                    className="w-full rounded-xl border border-[#E3D4CC] bg-white px-4 py-2.5 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+                  >
+                    <option value="true">Available</option>
+                    <option value="false">Unavailable</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-3 justify-end pt-4">
+                <button
+                  type="button"
+                  onClick={() => setIsEditProfileOpen(false)}
+                  className="rounded-xl border border-[#E3D4CC] px-4 py-2 text-sm font-semibold text-[#806B61] hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-[#3D2010] hover:bg-[#D97757] px-4 py-2 text-sm font-semibold text-white transition-colors"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

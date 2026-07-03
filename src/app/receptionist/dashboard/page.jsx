@@ -2,8 +2,9 @@
 
 import React from "react";
 import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import DashboardCalendar from "@/components/DashboardCalendar";
 
 const navItems = [
   "Dashboard",
@@ -335,6 +336,16 @@ export default function ReceptionistDashboard() {
   const [slots, setSlots] = useState([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
 
+  const receptionistEvents = useMemo(() => {
+    return appointments.map(a => ({
+      date: a.scheduledTime ? a.scheduledTime.split("T")[0] : "",
+      type: a.visitType || "Appointment",
+      title: `Appt: ${fullName(a.patient?.user)} with Dr. ${fullName(a.doctor?.user)}`,
+      time: formatDate(a.scheduledTime, true).split(" - ")[1] || formatDate(a.scheduledTime, true),
+      details: `Hospital: ${a.hospital?.name || "Clinic"} | Reason: ${a.reason || "General checkup"} (${a.status})`
+    })).filter(e => e.date);
+  }, [appointments]);
+
   const logout = useCallback(() => {
     localStorage.removeItem("receptionistToken");
     localStorage.removeItem("receptionistRoles");
@@ -635,51 +646,57 @@ export default function ReceptionistDashboard() {
           <MetricCard label="Available Doctors" value={doctors.length} detail="Linked to hospital network" tone="green" />
         </div>
 
-        <div>
-          <SectionHeader title="Today's Schedule" description="Latest appointment queue details for today." />
-          <DataTable
-            rows={todayAppointments}
-            keyFor={(row) => row.encounterId}
-            emptyMessage="No appointments scheduled for today."
-            columns={[
-              { label: "Token", render: (row) => <span className="font-bold text-[#D97757]">#{row.tokenNo || 1}</span> },
-              { label: "Patient", render: (row) => fullName(row.patient?.user) },
-              { label: "Doctor", render: (row) => fullName(row.doctor?.user) },
-              { label: "Time", render: (row) => formatDate(row.scheduledTime, true) },
-              { label: "Status", render: (row) => <StatusBadge value={row.status} /> },
-              {
-                label: "Actions",
-                render: (row) => (
-                  <div className="flex gap-2">
-                    {row.status === "SCHEDULED" && (
-                      <button
-                        onClick={() => handleUpdateStatus(row.encounterId, "IN_PROGRESS")}
-                        className="rounded-lg bg-[#3D2010] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#D97757]"
-                      >
-                        Check In
-                      </button>
-                    )}
-                    {row.status === "IN_PROGRESS" && (
-                      <button
-                        onClick={() => handleUpdateStatus(row.encounterId, "COMPLETED")}
-                        className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
-                      >
-                        Complete
-                      </button>
-                    )}
-                    {row.status !== "CANCELLED" && row.status !== "COMPLETED" && (
-                      <button
-                        onClick={() => handleUpdateStatus(row.encounterId, "CANCELLED")}
-                        className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100"
-                      >
-                        Cancel
-                      </button>
-                    )}
-                  </div>
-                ),
-              },
-            ]}
-          />
+        <div className="grid gap-6 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <SectionHeader title="Today's Schedule" description="Latest appointment queue details for today." />
+            <DataTable
+              rows={todayAppointments}
+              keyFor={(row) => row.encounterId}
+              emptyMessage="No appointments scheduled for today."
+              columns={[
+                { label: "Token", render: (row) => <span className="font-bold text-[#D97757]">#{row.tokenNo || 1}</span> },
+                { label: "Patient", render: (row) => fullName(row.patient?.user) },
+                { label: "Doctor", render: (row) => fullName(row.doctor?.user) },
+                { label: "Time", render: (row) => formatDate(row.scheduledTime, true) },
+                { label: "Status", render: (row) => <StatusBadge value={row.status} /> },
+                {
+                  label: "Actions",
+                  render: (row) => (
+                    <div className="flex gap-2">
+                      {row.status === "SCHEDULED" && (
+                        <button
+                          onClick={() => handleUpdateStatus(row.encounterId, "IN_PROGRESS")}
+                          className="rounded-lg bg-[#3D2010] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#D97757]"
+                        >
+                          Check In
+                        </button>
+                      )}
+                      {row.status === "IN_PROGRESS" && (
+                        <button
+                          onClick={() => handleUpdateStatus(row.encounterId, "COMPLETED")}
+                          className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                        >
+                          Complete
+                        </button>
+                      )}
+                      {row.status !== "CANCELLED" && row.status !== "COMPLETED" && (
+                        <button
+                          onClick={() => handleUpdateStatus(row.encounterId, "CANCELLED")}
+                          className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          </div>
+
+          <div>
+            <DashboardCalendar events={receptionistEvents} />
+          </div>
         </div>
       </div>
     );
@@ -1008,9 +1025,11 @@ export default function ReceptionistDashboard() {
 
       {/* Sidebar */}
       <aside className={`fixed bottom-0 left-0 top-0 z-50 flex w-[250px] shrink-0 flex-col border-r border-[#EEDFD7] bg-white transition-transform duration-300 lg:sticky lg:top-0 lg:h-screen ${isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
-        <button onClick={() => setActiveNav("Dashboard")} className="flex h-[74px] items-center border-b border-[#EEDFD7] px-6 text-left">
-          <Image src="/logo.png" alt="VitaData Solutions" width={112} height={56} className="h-12 w-auto object-contain object-left" priority />
-        </button>
+        <div className="flex h-[74px] justify-center items-center border-b border-[#EEDFD7]">
+          <button onClick={() => setActiveNav("Dashboard")} className="flex justify-center items-center w-full h-full px-4">
+            <Image src="/logo.png" alt="VitaData Solutions" width={180} height={90} className="h-[60px] w-auto object-contain" priority />
+          </button>
+        </div>
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="space-y-1">
             {navItems.map((item) => (

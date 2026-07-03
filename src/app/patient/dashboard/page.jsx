@@ -2,8 +2,9 @@
 
 import React from "react";
 import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import DashboardCalendar from "@/components/DashboardCalendar";
 
 const navItems = [
   "Dashboard",
@@ -336,6 +337,16 @@ export default function PatientDashboard() {
   const [bookingSlot, setBookingSlot] = useState("");
   const [slots, setSlots] = useState([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
+
+  const patientEvents = useMemo(() => {
+    return appointments.map(a => ({
+      date: a.scheduledTime ? a.scheduledTime.split("T")[0] : "",
+      type: a.visitType || "Appointment",
+      title: `Appointment: Dr. ${a.doctor?.name || "Clinician"}`,
+      time: formatDate(a.scheduledTime, true).split(" - ")[1] || formatDate(a.scheduledTime, true),
+      details: `Location: ${a.hospital?.name || "Clinic"} | Reason: ${a.reason || "General checkup"} (${a.status})`
+    })).filter(e => e.date);
+  }, [appointments]);
 
   const logout = useCallback(() => {
     localStorage.removeItem("patientToken");
@@ -876,7 +887,7 @@ export default function PatientDashboard() {
           </div>
         )}
 
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-3">
           <div className="bg-white rounded-2xl border border-[#EEDFD7] p-5 shadow-sm">
             <h3 className="font-bold text-[#3D2010] mb-4">Medication Adherence Ad-hoc Summary</h3>
             {medDashboard?.summary ? (
@@ -915,6 +926,10 @@ export default function PatientDashboard() {
                 <span className="text-sm font-bold text-[#3D2010]">{formatDate(profile?.patient?.dob)}</span>
               </div>
             </div>
+          </div>
+
+          <div>
+            <DashboardCalendar events={patientEvents} />
           </div>
         </div>
       </div>
@@ -1184,9 +1199,11 @@ export default function PatientDashboard() {
 
       {/* Sidebar */}
       <aside className={`fixed bottom-0 left-0 top-0 z-50 flex w-[250px] shrink-0 flex-col border-r border-[#EEDFD7] bg-white transition-transform duration-300 lg:sticky lg:top-0 lg:h-screen ${isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
-        <button onClick={() => setActiveNav("Dashboard")} className="flex h-[74px] items-center border-b border-[#EEDFD7] px-6 text-left">
-          <Image src="/logo.png" alt="VitaData Solutions" width={112} height={56} className="h-12 w-auto object-contain object-left" priority />
-        </button>
+        <div className="flex h-[74px] justify-center items-center border-b border-[#EEDFD7]">
+          <button onClick={() => setActiveNav("Dashboard")} className="flex justify-center items-center w-full h-full px-4">
+            <Image src="/logo.png" alt="VitaData Solutions" width={180} height={90} className="h-[60px] w-auto object-contain" priority />
+          </button>
+        </div>
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="space-y-1">
             {navItems.map((item) => (

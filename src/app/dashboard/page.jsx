@@ -2,8 +2,9 @@
 
 import React from "react";
 import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import DashboardCalendar from "@/components/DashboardCalendar";
 
 const navItems = [
   "Dashboard",
@@ -211,6 +212,18 @@ function DataTable({ columns, rows, keyFor, emptyMessage }) {
 function DashboardOverview({ data }) {
   const overview = data.overview;
   const recentAppointments = data.appointments.slice(0, 6);
+
+  const calendarEvents = useMemo(() => {
+    if (!data.appointments) return [];
+    return data.appointments.map(a => ({
+      date: a.scheduledTime ? a.scheduledTime.split("T")[0] : "",
+      type: a.visitType || "Appointment",
+      title: `Appt: ${fullName(a.patient?.user)} with Dr. ${fullName(a.doctor?.user)}`,
+      time: formatDate(a.scheduledTime, true).split(" - ")[1] || formatDate(a.scheduledTime, true),
+      details: `Hospital: ${a.hospital?.name || "Clinic"} | Reason: ${a.reason || "General checkup"} (${a.status})`
+    })).filter(e => e.date);
+  }, [data.appointments]);
+
   return (
     <div className="space-y-7">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -220,8 +233,8 @@ function DashboardOverview({ data }) {
         <MetricCard label="Collected Revenue" value={formatCurrency(overview.totalRevenue)} detail={`${formatCurrency(overview.outstandingRevenue)} outstanding`} tone="amber" />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[1.45fr_0.55fr]">
-        <div>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
           <SectionHeader title="Recent appointments" description="Latest clinical visits across your hospital scope." />
           <DataTable
             rows={recentAppointments}
@@ -237,21 +250,25 @@ function DashboardOverview({ data }) {
           />
         </div>
 
-        <div className="rounded-2xl border border-[#EEDFD7] bg-white p-5 shadow-sm">
-          <h3 className="font-bold text-[#3D2010]">Operations snapshot</h3>
-          <div className="mt-5 space-y-4">
-            {[
-              ["Reception team", overview.receptionists],
-              ["Lab staff", overview.labStaff],
-              ["Abnormal lab results", overview.abnormalLabResults],
-              ["Pending appointments", overview.pendingAppointments],
-            ].map(([label, value]) => (
-              <div key={label} className="flex items-center justify-between border-b border-[#F3EAE5] pb-3 last:border-0 last:pb-0">
-                <span className="text-sm text-[#7A655B]">{label}</span>
-                <span className="rounded-lg bg-[#FFF4EC] px-2.5 py-1 text-sm font-bold text-[#D97757]">{value}</span>
-              </div>
-            ))}
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-[#EEDFD7] bg-white p-5 shadow-sm">
+            <h3 className="font-bold text-[#3D2010]">Operations snapshot</h3>
+            <div className="mt-5 space-y-4">
+              {[
+                ["Reception team", overview.receptionists],
+                ["Lab staff", overview.labStaff],
+                ["Abnormal lab results", overview.abnormalLabResults],
+                ["Pending appointments", overview.pendingAppointments],
+              ].map(([label, value]) => (
+                <div key={label} className="flex items-center justify-between border-b border-[#F3EAE5] pb-3 last:border-0 last:pb-0">
+                  <span className="text-sm text-[#7A655B]">{label}</span>
+                  <span className="rounded-lg bg-[#FFF4EC] px-2.5 py-1 text-sm font-bold text-[#D97757]">{value}</span>
+                </div>
+              ))}
+            </div>
           </div>
+
+          <DashboardCalendar events={calendarEvents} />
         </div>
       </div>
     </div>
@@ -661,9 +678,11 @@ export default function AdminDashboard() {
       {isSidebarOpen && <button aria-label="Close navigation" className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setIsSidebarOpen(false)} />}
 
       <aside className={`fixed bottom-0 left-0 top-0 z-50 flex w-[250px] shrink-0 flex-col border-r border-[#EEDFD7] bg-white transition-transform duration-300 lg:sticky lg:top-0 lg:h-screen ${isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
-        <button onClick={() => setActiveNav("Dashboard")} className="flex h-[74px] items-center border-b border-[#EEDFD7] px-6 text-left">
-          <Image src="/logo.png" alt="VitaData Solutions" width={112} height={56} className="h-12 w-auto object-contain object-left" priority />
-        </button>
+        <div className="flex h-[74px] justify-center items-center border-b border-[#EEDFD7]">
+          <button onClick={() => setActiveNav("Dashboard")} className="flex justify-center items-center w-full h-full px-4">
+            <Image src="/logo.png" alt="VitaData Solutions" width={180} height={90} className="h-[60px] w-auto object-contain" priority />
+          </button>
+        </div>
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="space-y-1">
             {navItems.map((item) => (

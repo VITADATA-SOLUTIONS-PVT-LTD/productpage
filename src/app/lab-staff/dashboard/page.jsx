@@ -2,8 +2,9 @@
 
 import React from "react";
 import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import DashboardCalendar from "@/components/DashboardCalendar";
 
 const navItems = [
   "Dashboard",
@@ -250,6 +251,26 @@ export default function LabStaffDashboard() {
     normalRange: "",
   });
 
+  const labEvents = useMemo(() => {
+    const scheduledEvents = encounters.map(e => ({
+      date: e.scheduledTime ? e.scheduledTime.split("T")[0] : "",
+      type: e.visitType || "Lab Test",
+      title: `Encounter: ${fullName(e.patient?.user)}`,
+      time: formatDate(e.scheduledTime, true).split(" - ")[1] || formatDate(e.scheduledTime, true),
+      details: `Visit Type: ${e.visitType || "OPD"} | Status: ${e.status || "Scheduled"}`
+    }));
+
+    const resultEvents = labResults.map(r => ({
+      date: r.reportedAt ? r.reportedAt.split("T")[0] : "",
+      type: "Lab Report",
+      title: `${r.labTest?.testName || "Lab Test"} for ${r.encounter?.patient?.user ? fullName(r.encounter.patient.user) : "Patient"}`,
+      time: formatDate(r.reportedAt, true).split(" - ")[1] || formatDate(r.reportedAt, true),
+      details: `Value: ${r.resultValue || "—"} ${r.labTest?.unit || ""} | Range: ${r.labTest?.normalRange || "—"} (${r.isAbnormal ? "Abnormal" : "Normal"})`
+    }));
+
+    return [...scheduledEvents, ...resultEvents].filter(e => e.date);
+  }, [encounters, labResults]);
+
   const logout = useCallback(() => {
     localStorage.removeItem("labStaffToken");
     localStorage.removeItem("labStaffRoles");
@@ -459,6 +480,7 @@ export default function LabStaffDashboard() {
   // Views
   const renderOverview = () => {
     const abnormalCount = labResults.filter(r => r.isAbnormal).length;
+
     return (
       <div className="space-y-7">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -467,21 +489,27 @@ export default function LabStaffDashboard() {
           <MetricCard label="Available Test Types" value={labTests.length} detail="In diagnostics catalog" tone="green" />
         </div>
 
-        <div>
-          <SectionHeader title="Recent Lab Reports" description="Latest diagnostic logs recorded." />
-          <DataTable
-            rows={labResults.slice(0, 10)}
-            keyFor={(row) => row.resultId}
-            emptyMessage="No lab results recorded."
-            columns={[
-              { label: "Patient", render: (row) => row.encounter?.patient?.user ? fullName(row.encounter.patient.user) : "Unknown Patient" },
-              { label: "Test", render: (row) => row.labTest?.testName || "—" },
-              { label: "Value", render: (row) => `${row.resultValue || "—"} ${row.labTest?.unit || ""}` },
-              { label: "Reference Range", render: (row) => row.labTest?.normalRange || "—" },
-              { label: "Reported At", render: (row) => formatDate(row.reportedAt, true) },
-              { label: "Status", render: (row) => <StatusBadge value={row.isAbnormal} /> },
-            ]}
-          />
+        <div className="grid gap-6 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <SectionHeader title="Recent Lab Reports" description="Latest diagnostic logs recorded." />
+            <DataTable
+              rows={labResults.slice(0, 10)}
+              keyFor={(row) => row.resultId}
+              emptyMessage="No lab results recorded."
+              columns={[
+                { label: "Patient", render: (row) => row.encounter?.patient?.user ? fullName(row.encounter.patient.user) : "Unknown Patient" },
+                { label: "Test", render: (row) => row.labTest?.testName || "—" },
+                { label: "Value", render: (row) => `${row.resultValue || "—"} ${row.labTest?.unit || ""}` },
+                { label: "Reference Range", render: (row) => row.labTest?.normalRange || "—" },
+                { label: "Reported At", render: (row) => formatDate(row.reportedAt, true) },
+                { label: "Status", render: (row) => <StatusBadge value={row.isAbnormal} /> },
+              ]}
+            />
+          </div>
+
+          <div>
+            <DashboardCalendar events={labEvents} />
+          </div>
         </div>
       </div>
     );
@@ -663,9 +691,11 @@ export default function LabStaffDashboard() {
 
       {/* Sidebar */}
       <aside className={`fixed bottom-0 left-0 top-0 z-50 flex w-[250px] shrink-0 flex-col border-r border-[#EEDFD7] bg-white transition-transform duration-300 lg:sticky lg:top-0 lg:h-screen ${isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
-        <button onClick={() => setActiveNav("Dashboard")} className="flex h-[74px] items-center border-b border-[#EEDFD7] px-6 text-left">
-          <Image src="/logo.png" alt="VitaData Solutions" width={112} height={56} className="h-12 w-auto object-contain object-left" priority />
-        </button>
+        <div className="flex h-[74px] justify-center items-center border-b border-[#EEDFD7]">
+          <button onClick={() => setActiveNav("Dashboard")} className="flex justify-center items-center w-full h-full px-4">
+            <Image src="/logo.png" alt="VitaData Solutions" width={180} height={90} className="h-[60px] w-auto object-contain" priority />
+          </button>
+        </div>
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="space-y-1">
             {navItems.map((item) => (
