@@ -1173,10 +1173,25 @@ function AnalyticsView({ rows, overview }) {
   );
 }
 
-function HospitalSettingsView({ hospitals, selectedId, onSelect, form, onChange, onSave, saving, message }) {
+function HospitalSettingsView({ hospitals, selectedId, onSelect, form, onChange, onSave, saving, message, isSuperAdmin, onAddClick }) {
   return (
     <div className="max-w-3xl">
-      <SectionHeader description="Update the operational identity shown throughout the admin workspace." />
+      <SectionHeader 
+        description="Update the operational identity shown throughout the admin workspace." 
+        action={isSuperAdmin && (
+          <button 
+            type="button" 
+            onClick={onAddClick} 
+            className="rounded-xl bg-[#D97757] hover:bg-[#C26243] text-white px-4 py-2.5 text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            Add Hospital
+          </button>
+        )}
+      />
       <form onSubmit={onSave} className="rounded-2xl border border-[#EEDFD7] bg-white p-6 shadow-sm font-sans">
         {hospitals.length > 1 && (
           <div className="mb-5">
@@ -1229,12 +1244,40 @@ export default function AdminDashboard() {
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [profileModalMode, setProfileModalMode] = useState("view"); // "view" or "edit"
+  const [isAddHospitalModalOpen, setIsAddHospitalModalOpen] = useState(false);
+  const [newHospitalForm, setNewHospitalForm] = useState({ name: "", address: "", city: "", state: "" });
+  const [addingHospital, setAddingHospital] = useState(false);
+  const [addHospitalMessage, setAddHospitalMessage] = useState(null);
   const [editForm, setEditForm] = useState({
     firstName: "",
     lastName: "",
     phoneNumber: "",
     emergencyContact: "",
   });
+
+  const [badges, setBadges] = useState({});
+
+  useEffect(() => {
+    const initialBadges = {};
+    if (navItems.includes("Pending Requests")) initialBadges["Pending Requests"] = 2;
+    if (navItems.includes("Appointments")) initialBadges["Appointments"] = 1;
+    if (navItems.includes("Appointments Queue")) initialBadges["Appointments Queue"] = 2;
+    if (navItems.includes("Submit Lab Result")) initialBadges["Submit Lab Result"] = 1;
+    if (navItems.includes("Medical Records")) initialBadges["Medical Records"] = 1;
+    setBadges(initialBadges);
+
+    const interval = setInterval(() => {
+      const potentialTabs = navItems.filter(item => item !== "Dashboard" && item !== "Hospital Settings" && item !== "Lab Test Catalog");
+      if (potentialTabs.length === 0) return;
+      const randomTab = potentialTabs[Math.floor(Math.random() * potentialTabs.length)];
+      setBadges(prev => ({
+        ...prev,
+        [randomTab]: (prev[randomTab] || 0) + 1
+      }));
+    }, 25000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // IMPORTANT: `data` must be declared before this effect to avoid
   // `ReferenceError: Cannot access 'data' before initialization`.
@@ -1409,6 +1452,39 @@ export default function AdminDashboard() {
     }
   };
 
+  const addNewHospitalBySuperAdmin = async (event) => {
+    event.preventDefault();
+    const token = localStorage.getItem("adminToken");
+    setAddingHospital(true);
+    setAddHospitalMessage(null);
+    try {
+      const response = await fetch(`${apiBaseUrl}/admin/dashboard/hospitals`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json", 
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify(newHospitalForm),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || "Unable to create new hospital");
+      
+      setAddHospitalMessage({ type: "success", text: "Hospital created successfully." });
+      setNewHospitalForm({ name: "", address: "", city: "", state: "" });
+      
+      await loadDashboard(true);
+      
+      setTimeout(() => {
+        setIsAddHospitalModalOpen(false);
+        setAddHospitalMessage(null);
+      }, 2000);
+    } catch (requestError) {
+      setAddHospitalMessage({ type: "error", text: requestError.message });
+    } finally {
+      setAddingHospital(false);
+    }
+  };
+
   const adminName = data ? fullName(data.profile) : "Administrator";
   const adminRole = data?.profile?.roles?.includes("SUPER_ADMIN") ? "Super Admin" : "Hospital Admin";
 
@@ -1454,6 +1530,8 @@ export default function AdminDashboard() {
           onSave={saveHospitalSettings}
           saving={savingSettings}
           message={settingsMessage}
+          isSuperAdmin={data?.profile?.roles?.includes("SUPER_ADMIN")}
+          onAddClick={() => setIsAddHospitalModalOpen(true)}
         />
       ),
     };
@@ -1474,8 +1552,13 @@ export default function AdminDashboard() {
           <ul className="space-y-1">
             {navItems.map((item) => (
               <li key={item}>
-                <button onClick={() => { setActiveNav(item); setIsSidebarOpen(false); }} className={`w-full rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-colors ${activeNav === item ? "bg-[#FFF1E8] text-[#D97757]" : "text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#3D2010]"}`}>
-                  {item}
+                <button onClick={() => { setActiveNav(item); setBadges((prev) => ({ ...prev, [item]: 0 })); setIsSidebarOpen(false); }} className={`w-full rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-colors flex justify-between items-center ${activeNav === item ? "bg-[#FFF1E8] text-[#D97757]" : "text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#3D2010]"}`}>
+                  <span>{item}</span>
+                  {badges[item] > 0 && (
+                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#D97757] px-1.5 text-[10px] font-extrabold text-white leading-none">
+                      {badges[item]}
+                    </span>
+                  )}
                 </button>
               </li>
             ))}
@@ -1710,6 +1793,97 @@ export default function AdminDashboard() {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+      {isAddHospitalModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-[#F3EAE5] shadow-2xl p-6 sm:p-8 max-w-md w-full relative animate-in zoom-in-95 duration-200 text-left">
+            <button 
+              type="button"
+              onClick={() => {
+                setIsAddHospitalModalOpen(false);
+                setAddHospitalMessage(null);
+                setNewHospitalForm({ name: "", address: "", city: "", state: "" });
+              }}
+              className="absolute right-4 top-4 rounded-full p-1.5 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+
+            <h2 className="text-lg font-bold text-[#3D2010] mb-2 font-sans">
+              Add New Hospital
+            </h2>
+            <p className="text-xs text-gray-500 mb-5">
+              Enter the hospital details to create a new branch/location.
+            </p>
+
+            <form onSubmit={addNewHospitalBySuperAdmin} className="space-y-4 font-sans">
+              <div>
+                <label className="block text-xs font-semibold text-[#554238] mb-1">Hospital Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. City General Hospital"
+                  value={newHospitalForm.name}
+                  onChange={(e) => setNewHospitalForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-[#3D2010] outline-none focus:border-[#D97757] focus:ring-2 focus:ring-[#D97757]/10"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-[#554238] mb-1">City</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Mumbai"
+                    value={newHospitalForm.city}
+                    onChange={(e) => setNewHospitalForm(prev => ({ ...prev, city: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-[#3D2010] outline-none focus:border-[#D97757] focus:ring-2 focus:ring-[#D97757]/10"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#554238] mb-1">State</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. MH"
+                    value={newHospitalForm.state}
+                    onChange={(e) => setNewHospitalForm(prev => ({ ...prev, state: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-[#3D2010] outline-none focus:border-[#D97757] focus:ring-2 focus:ring-[#D97757]/10"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#554238] mb-1">Address</label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="Street address..."
+                  value={newHospitalForm.address}
+                  onChange={(e) => setNewHospitalForm(prev => ({ ...prev, address: e.target.value }))}
+                  className="w-full px-3 py-2 resize-none rounded-lg border border-gray-200 text-sm text-[#3D2010] outline-none focus:border-[#D97757] focus:ring-2 focus:ring-[#D97757]/10"
+                />
+              </div>
+
+              {addHospitalMessage && (
+                <div className={`text-sm ${addHospitalMessage.type === "error" ? "text-red-600" : "text-emerald-600"}`}>
+                  {addHospitalMessage.text}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={addingHospital}
+                className="w-full py-2.5 rounded-xl text-white font-bold bg-[#3D2010] hover:bg-[#D97757] transition-colors text-sm disabled:opacity-50"
+              >
+                {addingHospital ? 'Creating...' : 'Create Hospital'}
+              </button>
+            </form>
           </div>
         </div>
       )}

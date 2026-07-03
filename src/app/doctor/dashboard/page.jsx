@@ -421,6 +421,29 @@ export default function DoctorDashboard() {
   const router = useRouter();
   const [activeNav, setActiveNav] = useState("Dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [badges, setBadges] = useState({});
+
+  useEffect(() => {
+    const initialBadges = {};
+    if (navItems.includes("Pending Requests")) initialBadges["Pending Requests"] = 2;
+    if (navItems.includes("Appointments")) initialBadges["Appointments"] = 1;
+    if (navItems.includes("Appointments Queue")) initialBadges["Appointments Queue"] = 2;
+    if (navItems.includes("Submit Lab Result")) initialBadges["Submit Lab Result"] = 1;
+    if (navItems.includes("Medical Records")) initialBadges["Medical Records"] = 1;
+    setBadges(initialBadges);
+
+    const interval = setInterval(() => {
+      const potentialTabs = navItems.filter(item => item !== "Dashboard" && item !== "Hospital Settings" && item !== "Lab Test Catalog");
+      if (potentialTabs.length === 0) return;
+      const randomTab = potentialTabs[Math.floor(Math.random() * potentialTabs.length)];
+      setBadges(prev => ({
+        ...prev,
+        [randomTab]: (prev[randomTab] || 0) + 1
+      }));
+    }, 25000);
+
+    return () => clearInterval(interval);
+  }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
@@ -1639,10 +1662,15 @@ export default function DoctorDashboard() {
             {navItems.map((item) => (
               <li key={item}>
                 <button
-                  onClick={() => { setActiveNav(item); setIsSidebarOpen(false); setSuccessMsg(""); setManagingPatient(null); setIsPrescriptionFormOpen(false); }}
-                  className={`w-full rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-colors ${activeNav === item && !managingPatient ? "bg-[#FFF1E8] text-[#D97757]" : "text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#3D2010]"}`}
+                  onClick={() => { setActiveNav(item); setBadges((prev) => ({ ...prev, [item]: 0 })); setIsSidebarOpen(false); setSuccessMsg(""); setManagingPatient(null); setIsPrescriptionFormOpen(false); }}
+                  className={`w-full rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-colors flex justify-between items-center ${activeNav === item && !managingPatient ? "bg-[#FFF1E8] text-[#D97757]" : "text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#3D2010]"}`}
                 >
-                  {item}
+                  <span>{item}</span>
+                  {badges[item] > 0 && (
+                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#D97757] px-1.5 text-[10px] font-extrabold text-white leading-none">
+                      {badges[item]}
+                    </span>
+                  )}
                 </button>
               </li>
             ))}

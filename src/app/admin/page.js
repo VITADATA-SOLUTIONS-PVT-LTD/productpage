@@ -25,6 +25,7 @@ export default function AdminLoginPage() {
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const [showPendingModal, setShowPendingModal] = useState(false);
     const router = useRouter();
 
     const apiBaseUrl = process.env.NEXT_PUBLIC_URL || process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL;
@@ -50,6 +51,10 @@ export default function AdminLoginPage() {
             const data = await response.json();
 
             if (!response.ok || data?.status !== 'OK' || !data?.accessToken) {
+                if (response.status === 403 || data?.status === 'FORBIDDEN') {
+                    setShowPendingModal(true);
+                    return;
+                }
                 throw new Error(data?.error || data?.message || 'Login failed');
             }
 
@@ -181,6 +186,45 @@ export default function AdminLoginPage() {
                 Back to Home
             </Link>
 
+            {showPendingModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div className="bg-white rounded-3xl border border-[#F3EAE5] shadow-2xl p-6 sm:p-8 max-w-sm w-full relative animate-in zoom-in-95 duration-200 text-left">
+                        <button 
+                            type="button"
+                            onClick={() => setShowPendingModal(false)}
+                            className="absolute right-4 top-4 rounded-full p-1.5 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors"
+                        >
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18" />
+                                <line x1="6" y1="6" x2="18" y2="18" />
+                            </svg>
+                        </button>
+
+                        <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-amber-50 border border-amber-200 text-amber-600 mb-4 animate-pulse">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="10" />
+                                <polyline points="12 6 12 12 16 14" />
+                            </svg>
+                        </div>
+
+                        <h2 className="text-lg font-bold text-[#3D2010] mb-2 font-sans text-center">
+                            ID Under Review
+                        </h2>
+                        
+                        <p className="text-sm text-gray-500 text-center mb-6 leading-relaxed">
+                            Your account is pending administrator verification. Please wait until verification completes.
+                        </p>
+
+                        <button
+                            type="button"
+                            onClick={() => setShowPendingModal(false)}
+                            className="w-full py-2.5 rounded-xl text-white font-bold bg-[#3D2010] hover:bg-[#D97757] transition-colors text-sm font-sans"
+                        >
+                            Got it
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
