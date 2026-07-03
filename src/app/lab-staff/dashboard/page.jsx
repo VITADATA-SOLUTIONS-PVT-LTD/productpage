@@ -954,6 +954,10 @@ export default function LabStaffDashboard() {
                     <p className="text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-0.5">Emergency Contact</p>
                     <p className="text-sm font-medium text-[#3D2010]">{profile?.emergencyContact || "—"}</p>
                   </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <p className="text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-0.5">Hospital Affiliation</p>
+                    <p className="text-sm font-medium text-[#3D2010]">{profile?.labManager?.hospital?.name || "VITADATA Solutions"}</p>
+                  </div>
                 </div>
 
                 <div className="flex gap-3 pt-4 border-t border-[#F3EAE5] mt-6">

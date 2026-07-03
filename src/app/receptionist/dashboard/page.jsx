@@ -347,6 +347,23 @@ export default function ReceptionistDashboard() {
   const [slots, setSlots] = useState([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
 
+  // Search/New Patient booking states
+  const [searchPhone, setSearchPhone] = useState("");
+  const [searchEmail, setSearchEmail] = useState("");
+  const [searchStatus, setSearchStatus] = useState("idle"); // "idle" | "searching" | "found" | "not_found"
+  const [isNewPatient, setIsNewPatient] = useState(false);
+  const [newPatientForm, setNewPatientForm] = useState({
+    firstName: "",
+    lastName: "",
+    dob: "",
+  });
+  const [selectedSpecialty, setSelectedSpecialty] = useState("");
+
+  const [selectedPatientForPrescriptions, setSelectedPatientForPrescriptions] = useState(null);
+  const [patientPrescriptions, setPatientPrescriptions] = useState([]);
+  const [loadingPrescriptions, setLoadingPrescriptions] = useState(false);
+  const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
+
 
   useEffect(() => {
     if (profile) {
@@ -402,6 +419,14 @@ export default function ReceptionistDashboard() {
     })).filter(e => e.date);
   }, [appointments]);
 
+  const specialties = useMemo(() => {
+    const set = new Set();
+    doctors.forEach(d => {
+      if (d.specialization) set.add(d.specialization);
+    });
+    return Array.from(set).sort();
+  }, [doctors]);
+
   const logout = useCallback(() => {
     localStorage.removeItem("receptionistToken");
     localStorage.removeItem("receptionistRoles");
@@ -436,11 +461,13 @@ export default function ReceptionistDashboard() {
       }
       setProfile(currentProfile);
 
+      const hospitalId = currentProfile?.receptionist?.hospitalId;
+
       // 2. Load Doctors (cached)
       const cachedDoctors = getCachedItem("receptionist_cached_doctors");
       let currentDoctors = cachedDoctors || [];
       if (!cachedDoctors) {
-        const doctorsRes = await fetch(`${apiBaseUrl}/doctors`, {
+        const doctorsRes = await fetch(`${apiBaseUrl}/doctors${hospitalId ? `?hospitalId=${hospitalId}` : ""}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (doctorsRes.ok) {
@@ -452,7 +479,7 @@ export default function ReceptionistDashboard() {
       setDoctors(currentDoctors);
 
       // 3. Load Patients (dynamic)
-      const patientsRes = await fetch(`${apiBaseUrl}/patients`, {
+      const patientsRes = await fetch(`${apiBaseUrl}/patients${hospitalId ? `?hospitalId=${hospitalId}` : ""}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (patientsRes.ok) {
@@ -461,7 +488,7 @@ export default function ReceptionistDashboard() {
       }
 
       // 4. Load Appointments (dynamic)
-      const appointmentsRes = await fetch(`${apiBaseUrl}/encounters`, {
+      const appointmentsRes = await fetch(`${apiBaseUrl}/encounters${hospitalId ? `?hospitalId=${hospitalId}` : ""}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (appointmentsRes.ok) {
@@ -598,6 +625,203 @@ export default function ReceptionistDashboard() {
     }
   };
 
+  const handleOpenPrescriptionsModal = async (patient) => {
+    setSelectedPatientForPrescriptions(patient);
+    setIsPrescriptionModalOpen(true);
+    setLoadingPrescriptions(true);
+    setPatientPrescriptions([]);
+    
+    try {
+      const token = localStorage.getItem("receptionistToken");
+      const res = await fetch(`${apiBaseUrl}/prescriptions?patientId=${patient.patientId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPatientPrescriptions(Array.isArray(data) ? data : (data.data || []));
+      }
+    } catch (err) {
+      console.error("Failed to load prescriptions", err);
+    } finally {
+      setLoadingPrescriptions(false);
+    }
+  };
+
+  const handleDownloadPDF = (prescription, patient) => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      alert("Please allow popups to download report PDFs.");
+      return;
+    }
+    
+    const patientName = fullName(patient.user);
+    const dob = formatDate(patient.dob);
+    const gender = patient.gender || "—";
+    
+    const doctorUser = prescription.encounter?.doctor?.user || prescription.doctor?.user;
+    const doctorName = doctorUser ? fullName(doctorUser) : "Clinician";
+    const doctorSpecialization = prescription.encounter?.doctor?.specialization || prescription.doctor?.specialization || "General Medicine";
+
+    const diagnosis = prescription.encounter?.diagnosis || prescription.diagnosis || "Consultation Checkup";
+
+    const medicines = prescription.prescriptionMedicines || prescription.medicines || [];
+
+    const html = `
+      <html>
+      <head>
+        <title>Prescription - ${patientName}</title>
+        <style>
+          body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 40px; color: #3D2010; }
+          .header { display: flex; justify-content: space-between; border-bottom: 2px solid #3D2010; padding-bottom: 20px; margin-bottom: 30px; }
+          .logo { font-size: 24px; font-weight: bold; color: #D97757; }
+          .doc-info { text-align: right; }
+          .section { margin-bottom: 25px; }
+          .section-title { font-size: 16px; font-weight: bold; color: #3D2010; border-bottom: 1px solid #EEDFD7; padding-bottom: 5px; margin-bottom: 10px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          th { border-bottom: 2px solid #EEDFD7; text-align: left; padding: 8px; font-size: 14px; color: #6B554A; }
+          td { padding: 10px 8px; border-bottom: 1px solid #F3EAE5; font-size: 13px; }
+          .footer { margin-top: 50px; text-align: center; font-size: 11px; color: #9C8276; border-top: 1px solid #EEDFD7; padding-top: 15px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <div class="logo">VitaData Healthcare</div>
+            <p style="margin: 5px 0 0 0; font-size: 13px; color: #6B554A;">Patient Medical Record</p>
+          </div>
+          <div class="doc-info">
+            <h3 style="margin: 0;">Dr. ${doctorName}</h3>
+            <p style="margin: 5px 0 0 0; font-size: 12px; color: #6B554A;">${doctorSpecialization}</p>
+          </div>
+        </div>
+        <div class="section" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+          <div>
+            <strong>Patient Name:</strong> ${patientName}<br>
+            <strong>Date of Birth:</strong> ${dob}<br>
+            <strong>Gender:</strong> ${gender}
+          </div>
+          <div style="text-align: right;">
+            <strong>Prescription ID:</strong> ${prescription.prescriptionId || "—"}<br>
+            <strong>Date Issued:</strong> ${formatDate(prescription.createdAt)}<br>
+            <strong>Next Follow-up:</strong> ${formatDate(prescription.encounter?.followUpDate)}
+          </div>
+        </div>
+        
+        <div class="section">
+          <div class="section-title">Clinical Indication</div>
+          <p><strong>Chief Symptoms / Diagnosis Summary:</strong> ${diagnosis}</p>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Prescribed Medications</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Medicine</th>
+                <th>Dosage</th>
+                <th>Intake Frequency</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${medicines.map(m => `
+                <tr>
+                  <td><strong>${m.medicine?.name || m.name || "Medicine"}</strong></td>
+                  <td>${m.dosage || "—"}</td>
+                  <td>${m.frequency || "—"}</td>
+                  <td>${m.durationDays || "—"} days</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+        
+        <div class="footer">
+          <p>This is a digitally generated medical prescription card from VitaData Solutions.</p>
+        </div>
+        <script>
+          window.onload = function() { window.print(); }
+        </script>
+      </body>
+      </html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  const handleLookupPatient = async () => {
+    if (!searchPhone && !searchEmail) {
+      setError("Please enter a phone number or email to search.");
+      return;
+    }
+    setError("");
+    setSearchStatus("searching");
+    setIsNewPatient(false);
+    
+    try {
+      const token = localStorage.getItem("receptionistToken");
+      let query = "";
+      if (searchPhone) {
+        // Normalize phone number
+        const raw = String(searchPhone).trim();
+        const digits = raw.replace(/\D/g, '');
+        const canonicalPhone = raw.startsWith('+') ? `+${digits}` : (digits.length === 10 ? `+91${digits}` : `+${digits}`);
+        query = `phoneNumber=${encodeURIComponent(canonicalPhone)}`;
+      } else if (searchEmail) {
+        query = `email=${encodeURIComponent(searchEmail.trim())}`;
+      }
+
+      const res = await fetch(`${apiBaseUrl}/patients?${query}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.status === 404) {
+        setSearchStatus("not_found");
+        setIsNewPatient(true);
+        setBookingForm(prev => ({ ...prev, patientId: "" }));
+        setNewPatientForm({ firstName: "", lastName: "", dob: "" });
+        return;
+      }
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || "Failed to search patient");
+      }
+
+      const patientsData = await res.json();
+      const patient = Array.isArray(patientsData) ? patientsData[0] : patientsData;
+      
+      if (!patient) {
+        setSearchStatus("not_found");
+        setIsNewPatient(true);
+        setBookingForm(prev => ({ ...prev, patientId: "" }));
+        setNewPatientForm({ firstName: "", lastName: "", dob: "" });
+        return;
+      }
+
+      setSearchStatus("found");
+      setIsNewPatient(false);
+      setBookingForm(prev => ({ ...prev, patientId: patient.patientId }));
+      setNewPatientForm({
+        firstName: patient.user?.firstName || "",
+        lastName: patient.user?.lastName || "",
+        dob: patient.dob ? patient.dob.split("T")[0] : "",
+      });
+    } catch (err) {
+      setError(err.message);
+      setSearchStatus("idle");
+    }
+  };
+
+  const handleClearPatientSearch = () => {
+    setSearchPhone("");
+    setSearchEmail("");
+    setSearchStatus("idle");
+    setIsNewPatient(false);
+    setBookingForm(prev => ({ ...prev, patientId: "" }));
+    setNewPatientForm({ firstName: "", lastName: "", dob: "" });
+  };
+
   const handleBookAppointment = async (e) => {
     e.preventDefault();
     setError("");
@@ -607,13 +831,57 @@ export default function ReceptionistDashboard() {
 
     try {
       if (!hospitalId) throw new Error("Receptionist has no linked hospital");
-      if (!bookingForm.patientId) throw new Error("Please select a patient");
       if (!bookingForm.doctorId) throw new Error("Please select a doctor");
       if (!bookingDate) throw new Error("Please select a date");
       if (!bookingSlot) throw new Error("Please select an available slot");
 
-      const payload = {
-        ...bookingForm,
+      let finalPatientId = bookingForm.patientId;
+
+      if (isNewPatient) {
+        // Validate new patient fields
+        if (!newPatientForm.firstName || !newPatientForm.lastName || !newPatientForm.dob) {
+          throw new Error("First Name, Last Name, and Date of Birth are required for new patients");
+        }
+        if (!searchPhone && !searchEmail) {
+          throw new Error("Phone Number or Email is required");
+        }
+
+        // Register new patient
+        const patientPayload = {
+          firstName: newPatientForm.firstName,
+          lastName: newPatientForm.lastName,
+          phoneNumber: searchPhone || undefined,
+          email: searchEmail || undefined,
+          dob: newPatientForm.dob,
+        };
+
+        const patientRes = await fetch(`${apiBaseUrl}/patients`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(patientPayload),
+        });
+
+        const patientData = await patientRes.json();
+        if (!patientRes.ok) throw new Error(patientData.message || "Failed to register new patient");
+
+        finalPatientId = patientData.patientId || patientData.data?.patientId;
+        if (!finalPatientId) throw new Error("New patient registration did not return a patient ID");
+
+        // Optimistically add to patients registry local state
+        setPatients(prev => [patientData, ...prev]);
+      }
+
+      if (!finalPatientId) throw new Error("Please verify or enter patient details");
+
+      // Book encounter
+      const encounterPayload = {
+        patientId: finalPatientId,
+        doctorId: bookingForm.doctorId,
+        visitType: bookingForm.visitType,
+        reason: bookingForm.reason,
         hospitalId,
         scheduledTime: `${bookingDate}T${bookingSlot}:00.000Z`,
         duration: 30,
@@ -625,19 +893,21 @@ export default function ReceptionistDashboard() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(encounterPayload),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Failed to book appointment");
 
-      // OPTIMISTIC LOCAL STATE UPDATE
-      const newAppt = data.data;
+      const newAppt = data.data || data;
       if (newAppt) {
         setAppointments(prev => [newAppt, ...prev]);
       }
 
       setSuccessMsg("Appointment booked successfully!");
+      
+      // Reset forms
+      handleClearPatientSearch();
       setBookingForm({
         patientId: "",
         doctorId: "",
@@ -646,6 +916,7 @@ export default function ReceptionistDashboard() {
       });
       setBookingDate("");
       setBookingSlot("");
+      setSelectedSpecialty("");
       setActiveNav("Appointments");
     } catch (err) {
       setError(err.message);
@@ -864,21 +1135,135 @@ export default function ReceptionistDashboard() {
   };
 
   const renderBookAppointment = () => {
+    const isPatientVerified = searchStatus === "found" || searchStatus === "not_found";
+    const filteredDoctors = selectedSpecialty 
+      ? doctors.filter(doc => doc.specialization === selectedSpecialty)
+      : [];
+
     return (
       <div className="max-w-2xl bg-white rounded-2xl border border-[#EEDFD7] p-6 shadow-sm">
         <h2 className="text-xl font-bold text-[#3D2010] mb-4">Book Patient Appointment</h2>
-        <form onSubmit={handleBookAppointment} className="space-y-4">
+        
+        {/* Step 1: Patient Search & verification */}
+        <div className="mb-6 p-4 rounded-xl bg-[#FFF9F6] border border-[#F3EAE5] space-y-4">
+          <h3 className="text-sm font-bold text-[#3D2010] uppercase tracking-wider mb-2 font-sans">1. Verify / Find Patient</h3>
+          
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs font-semibold text-[#554238] mb-1">Phone Number</label>
+              <input
+                type="tel"
+                placeholder="e.g. +919876543210"
+                className="w-full rounded-xl border border-[#E3D4CC] px-4 py-2 text-sm focus:border-[#D97757] focus:outline-none"
+                value={searchPhone}
+                onChange={e => {
+                  setSearchPhone(e.target.value);
+                  if (searchStatus !== "idle") handleClearPatientSearch();
+                }}
+                disabled={searchStatus === "searching"}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#554238] mb-1">Email Address</label>
+              <input
+                type="email"
+                placeholder="patient@example.com"
+                className="w-full rounded-xl border border-[#E3D4CC] px-4 py-2 text-sm focus:border-[#D97757] focus:outline-none"
+                value={searchEmail}
+                onChange={e => {
+                  setSearchEmail(e.target.value);
+                  if (searchStatus !== "idle") handleClearPatientSearch();
+                }}
+                disabled={searchStatus === "searching"}
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleLookupPatient}
+              disabled={searchStatus === "searching" || (!searchPhone && !searchEmail)}
+              className="px-4 py-2 rounded-lg bg-[#3D2010] hover:bg-[#D97757] text-white text-xs font-bold transition-colors disabled:opacity-50"
+            >
+              {searchStatus === "searching" ? "Searching..." : "Verify / Search"}
+            </button>
+            {isPatientVerified && (
+              <button
+                type="button"
+                onClick={handleClearPatientSearch}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-xs font-bold hover:bg-gray-50 transition-colors"
+              >
+                Clear Search
+              </button>
+            )}
+          </div>
+
+          {searchStatus === "found" && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs font-medium">
+              ✓ Existing Patient Found: <strong className="underline">{newPatientForm.firstName} {newPatientForm.lastName}</strong> (Date of Birth: {formatDate(newPatientForm.dob)})
+            </div>
+          )}
+
+          {searchStatus === "not_found" && (
+            <div className="space-y-4">
+              <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-xs font-medium">
+                ⚠ New Patient Account. Please enter their name and date of birth below to register them alongside the appointment.
+              </div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div>
+                  <label className="block text-xs font-bold text-[#8B7469] uppercase tracking-wider mb-1 font-sans">First Name *</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full rounded-lg border border-[#E3D4CC] px-3 py-2 text-xs focus:border-[#D97757] focus:outline-none text-gray-800"
+                    value={newPatientForm.firstName}
+                    onChange={e => setNewPatientForm({ ...newPatientForm, firstName: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#8B7469] uppercase tracking-wider mb-1 font-sans">Last Name *</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full rounded-lg border border-[#E3D4CC] px-3 py-2 text-xs focus:border-[#D97757] focus:outline-none text-gray-800"
+                    value={newPatientForm.lastName}
+                    onChange={e => setNewPatientForm({ ...newPatientForm, lastName: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#8B7469] uppercase tracking-wider mb-1 font-sans">Date of Birth *</label>
+                  <input
+                    type="date"
+                    required
+                    className="w-full rounded-lg border border-[#E3D4CC] px-3 py-2 text-xs focus:border-[#D97757] focus:outline-none text-gray-800"
+                    value={newPatientForm.dob}
+                    onChange={e => setNewPatientForm({ ...newPatientForm, dob: e.target.value })}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Step 2: Appointment Details */}
+        <form onSubmit={handleBookAppointment} className={`space-y-4 ${!isPatientVerified ? "opacity-40 pointer-events-none" : ""}`}>
+          <h3 className="text-sm font-bold text-[#3D2010] uppercase tracking-wider mb-2 font-sans">2. Appointment Information</h3>
+          
           <div>
             <AutocompleteSelect
-              label="Select Patient"
-              value={bookingForm.patientId}
-              onChange={(val) => setBookingForm({ ...bookingForm, patientId: val })}
-              options={patients.map(p => ({
-                id: p.patientId,
-                name: `${fullName(p.user)} (${p.user?.phoneNumber || "No phone"})`
+              label="Select Doctor Type"
+              value={selectedSpecialty}
+              onChange={(val) => {
+                setSelectedSpecialty(val);
+                setBookingForm({ ...bookingForm, doctorId: "" });
+              }}
+              options={specialties.map(spec => ({
+                id: spec,
+                name: spec
               }))}
-              placeholder="Type to search patient by name or phone..."
-              required
+              placeholder="Type to search specialty (e.g. Cardiology, Orthopedics)..."
+              required={isPatientVerified}
             />
           </div>
 
@@ -887,12 +1272,12 @@ export default function ReceptionistDashboard() {
               label="Select Doctor"
               value={bookingForm.doctorId}
               onChange={(val) => setBookingForm({ ...bookingForm, doctorId: val })}
-              options={doctors.map(d => ({
+              options={filteredDoctors.map(d => ({
                 id: d.doctorId,
-                name: `Dr. ${fullName(d.user)} - ${d.specialization}`
+                name: `Dr. ${fullName(d.user)} (${d.specialization})`
               }))}
-              placeholder="Type to search doctor by name or specialty..."
-              required
+              placeholder={selectedSpecialty ? "Type to search clinician..." : "Please select specialty first"}
+              required={isPatientVerified}
             />
           </div>
 
@@ -917,7 +1302,7 @@ export default function ReceptionistDashboard() {
                 value={bookingDate}
                 min={new Date().toISOString().split("T")[0]}
                 onChange={e => setBookingDate(e.target.value)}
-                required
+                required={isPatientVerified}
                 disabled={!bookingForm.doctorId}
               />
             </div>
@@ -967,9 +1352,10 @@ export default function ReceptionistDashboard() {
 
           <button
             type="submit"
-            className="rounded-xl bg-[#3D2010] hover:bg-[#D97757] text-white px-5 py-3 text-sm font-semibold transition-colors"
+            disabled={submitting}
+            className="rounded-xl bg-[#3D2010] hover:bg-[#D97757] text-white px-5 py-3 text-sm font-semibold transition-colors disabled:opacity-50"
           >
-            Confirm Appointment
+            {submitting ? "Booking..." : "Confirm & Book Appointment"}
           </button>
         </form>
       </div>
@@ -1061,6 +1447,17 @@ export default function ReceptionistDashboard() {
               { label: "DOB", render: (row) => formatDate(row.dob) },
               { label: "Blood Group", render: (row) => row.bloodGroup || "—" },
               { label: "Chronic Conditions", render: (row) => row.chronicConditions?.join(", ") || "None" },
+              {
+                label: "Actions",
+                render: (row) => (
+                  <button
+                    onClick={() => handleOpenPrescriptionsModal(row)}
+                    className="rounded-lg bg-[#3D2010] hover:bg-[#D97757] px-2.5 py-1 text-xs font-semibold text-white transition-colors"
+                  >
+                    View Prescriptions
+                  </button>
+                )
+              }
             ]}
           />
         </>
@@ -1267,6 +1664,10 @@ export default function ReceptionistDashboard() {
                     <p className="text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-0.5">Emergency Contact</p>
                     <p className="text-sm font-medium text-[#3D2010]">{profile?.emergencyContact || "—"}</p>
                   </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <p className="text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-0.5">Hospital Affiliation</p>
+                    <p className="text-sm font-medium text-[#3D2010]">{hospitalName}</p>
+                  </div>
                 </div>
 
                 <div className="flex gap-3 pt-4 border-t border-[#F3EAE5] mt-6">
@@ -1350,6 +1751,120 @@ export default function ReceptionistDashboard() {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {isPrescriptionModalOpen && selectedPatientForPrescriptions && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-[#F3EAE5] shadow-2xl p-6 sm:p-8 max-w-2xl w-full max-h-[85vh] overflow-y-auto relative animate-in zoom-in-95 duration-200">
+            <button 
+              onClick={() => setIsPrescriptionModalOpen(false)}
+              className="absolute right-4 top-4 rounded-full p-1.5 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+
+            <h2 className="text-xl font-bold text-[#3D2010] mb-2 font-sans">
+              Patient Prescriptions
+            </h2>
+            <p className="text-xs text-[#8B7469] mb-6 font-medium">
+              Registered Patient: <strong className="text-[#3D2010]">{fullName(selectedPatientForPrescriptions.user)}</strong> (DOB: {formatDate(selectedPatientForPrescriptions.dob)})
+            </p>
+
+            {loadingPrescriptions ? (
+              <div className="flex flex-col items-center justify-center py-12">
+                <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#F3DED2] border-t-[#D97757] mb-3" />
+                <span className="text-sm text-[#8B7469] font-medium font-sans">Retrieving prescription records...</span>
+              </div>
+            ) : patientPrescriptions.length === 0 ? (
+              <div className="text-center py-12 text-[#9C8276] font-medium text-sm border border-dashed border-[#EEDFD7] rounded-2xl">
+                No clinical prescriptions issued for this patient.
+              </div>
+            ) : (
+              <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-1">
+                {patientPrescriptions.map((p) => {
+                  const doctorUser = p.encounter?.doctor?.user || p.doctor?.user;
+                  const docName = doctorUser ? fullName(doctorUser) : "Clinician";
+                  const diag = p.encounter?.diagnosis || p.diagnosis || "Consultation Diagnosis";
+                  const meds = p.prescriptionMedicines || p.medicines || [];
+
+                  return (
+                    <div key={p.prescriptionId} className="p-4 rounded-2xl border border-[#EEDFD7] bg-[#FFFBF9] flex flex-col gap-3">
+                      <div className="flex justify-between items-start border-b border-[#F3EAE5] pb-2">
+                        <div>
+                          <h4 className="font-bold text-[#3D2010] text-sm">Dr. {docName}</h4>
+                          <p className="text-[10px] font-bold text-[#8B7469] uppercase tracking-wider">{p.encounter?.doctor?.specialization || "General Medicine"}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs font-semibold text-[#3D2010]">{formatDate(p.createdAt)}</p>
+                          <p className="text-[10px] text-[#9C8276]">ID: {p.prescriptionId.slice(0, 8)}</p>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <span className="text-[10px] font-bold text-[#8B7469] uppercase tracking-wider block mb-0.5">Indication / Diagnosis</span>
+                        <p className="text-xs text-[#3D2010] font-medium">{diag}</p>
+                      </div>
+
+                      {meds.length > 0 && (
+                        <div>
+                          <span className="text-[10px] font-bold text-[#8B7469] uppercase tracking-wider block mb-1">Medications ({meds.length})</span>
+                          <div className="bg-white rounded-lg border border-[#F3EAE5] overflow-hidden text-xs">
+                            <table className="w-full text-left border-collapse">
+                              <thead>
+                                <tr className="bg-[#FFF4EC] border-b border-[#F3EAE5] text-[10px] font-bold text-[#8B7469] uppercase tracking-wider">
+                                  <th className="p-1.5 pl-3">Medicine</th>
+                                  <th className="p-1.5">Dosage</th>
+                                  <th className="p-1.5">Frequency</th>
+                                  <th className="p-1.5 pr-3 text-right">Duration</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {meds.map((m, idx) => (
+                                  <tr key={idx} className="border-b border-[#F3EAE5] last:border-none">
+                                    <td className="p-1.5 pl-3 font-semibold text-[#3D2010]">{m.medicine?.name || m.name || "Medicine"}</td>
+                                    <td className="p-1.5">{m.dosage || "—"}</td>
+                                    <td className="p-1.5">{m.frequency || "—"}</td>
+                                    <td className="p-1.5 pr-3 text-right">{m.durationDays || "—"} days</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex justify-end pt-2">
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadPDF(p, selectedPatientForPrescriptions)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#3D2010] hover:bg-[#D97757] text-white text-xs font-bold transition-colors font-sans"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                          </svg>
+                          Print / Save PDF
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            
+            <div className="flex justify-end pt-4 border-t border-[#F3EAE5] mt-6">
+              <button
+                type="button"
+                onClick={() => setIsPrescriptionModalOpen(false)}
+                className="px-6 py-2 rounded-xl border border-gray-200 text-sm font-bold text-gray-500 hover:bg-gray-50 font-sans"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

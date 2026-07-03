@@ -1968,6 +1968,14 @@ export default function DoctorDashboard() {
                       {profile?.doctor?.isAvailable ? "Available" : "Unavailable"}
                     </span>
                   </div>
+                  <div className="col-span-2">
+                    <p className="text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-0.5">Hospital Affiliation(s)</p>
+                    <p className="text-sm font-medium text-[#3D2010]">
+                      {profile?.doctor?.hospitals?.length > 0
+                        ? profile.doctor.hospitals.map(h => h.hospital?.name).filter(Boolean).join(", ")
+                        : "VITADATA Solutions"}
+                    </p>
+                  </div>
                 </div>
 
                 <div className="flex gap-3 pt-4 border-t border-[#F3EAE5] mt-6">
