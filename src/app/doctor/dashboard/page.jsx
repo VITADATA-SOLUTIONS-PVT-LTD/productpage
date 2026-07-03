@@ -1502,7 +1502,7 @@ export default function DoctorDashboard() {
       Dashboard: renderOverview(),
       "Appointments Queue": (
         <>
-          <SectionHeader title="Patient Consultation Queue" description="Log of scheduled checkups assigned to you." />
+          <SectionHeader description="Log of scheduled checkups assigned to you." />
           
           <DataTable
             rows={filteredQueue}
@@ -1582,7 +1582,7 @@ export default function DoctorDashboard() {
       "Record Vitals": renderRecordVitals(),
       "Patients Registry": (
         <>
-          <SectionHeader title="Clinical Patients Registry" description="View details of registered patients in your scope." />
+          <SectionHeader description="View details of registered patients in your scope." />
           <DataTable
             rows={scopedPatients}
             keyFor={(row) => row.patientId}

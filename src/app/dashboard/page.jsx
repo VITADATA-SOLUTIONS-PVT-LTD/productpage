@@ -278,7 +278,7 @@ function DashboardOverview({ data }) {
 function DoctorsView({ rows }) {
   return (
     <>
-      <SectionHeader title="Doctors" description="Verified clinicians linked to the hospitals you manage." />
+      <SectionHeader description="Verified clinicians linked to the hospitals you manage." />
       <DataTable
         rows={rows}
         keyFor={(row) => row.doctorId}
@@ -299,7 +299,7 @@ function DoctorsView({ rows }) {
 function ReceptionistsView({ rows }) {
   return (
     <>
-      <SectionHeader title="Receptionists" description="Front-desk staff and their assigned shifts." />
+      <SectionHeader description="Front-desk staff and their assigned shifts." />
       <DataTable
         rows={rows}
         keyFor={(row) => row.receptionistId}
@@ -320,7 +320,7 @@ function ReceptionistsView({ rows }) {
 function LabStaffView({ rows }) {
   return (
     <>
-      <SectionHeader title="Lab staff" description="Lab managers, departments, and diagnostic capacity." />
+      <SectionHeader description="Lab managers, departments, and diagnostic capacity." />
       <DataTable
         rows={rows}
         keyFor={(row) => row.managerId}
@@ -341,7 +341,7 @@ function LabStaffView({ rows }) {
 function AppointmentsView({ rows }) {
   return (
     <>
-      <SectionHeader title="Appointments" description="Scheduled and completed encounters with clinical context." />
+      <SectionHeader description="Scheduled and completed encounters with clinical context." />
       <DataTable
         rows={rows}
         keyFor={(row) => row.encounterId}
@@ -362,7 +362,7 @@ function AppointmentsView({ rows }) {
 function PatientsView({ rows }) {
   return (
     <>
-      <SectionHeader title="Patients" description="Patient identities and clinical-history coverage." />
+      <SectionHeader description="Patient identities and clinical-history coverage." />
       <DataTable
         rows={rows}
         keyFor={(row) => row.patientId}
@@ -383,7 +383,7 @@ function PatientsView({ rows }) {
 function LabReportsView({ rows }) {
   return (
     <>
-      <SectionHeader title="Lab reports" description="Reported diagnostic results and abnormal-result monitoring." />
+      <SectionHeader description="Reported diagnostic results and abnormal-result monitoring." />
       <DataTable
         rows={rows}
         keyFor={(row) => row.resultId}
@@ -410,7 +410,7 @@ function FinancialReportsView({ rows, overview }) {
         <MetricCard label="Invoices" value={rows.length} detail={`${rows.filter((row) => row.status === "PAID").length} fully paid`} />
       </div>
       <div>
-        <SectionHeader title="Financial reports" description="Invoices, payment status, totals, and due dates." />
+        <SectionHeader description="Invoices, payment status, totals, and due dates." />
         <DataTable
           rows={rows}
           keyFor={(row) => row.invoiceId}
@@ -442,7 +442,7 @@ function AnalyticsView({ rows, overview }) {
         <MetricCard label="Metrics recorded" value={rows.length} />
       </div>
       <div>
-        <SectionHeader title="Analytics" description="Stored operational and clinical metrics from the VitaData analytics pipeline." />
+        <SectionHeader description="Stored operational and clinical metrics from the VitaData analytics pipeline." />
         <DataTable
           rows={rows}
           keyFor={(row) => row.analyticsId}
@@ -464,7 +464,7 @@ function AnalyticsView({ rows, overview }) {
 function HospitalSettingsView({ hospitals, selectedId, onSelect, form, onChange, onSave, saving, message }) {
   return (
     <div className="max-w-3xl">
-      <SectionHeader title="Hospital settings" description="Update the operational identity shown throughout the admin workspace." />
+      <SectionHeader description="Update the operational identity shown throughout the admin workspace." />
       <form onSubmit={onSave} className="rounded-2xl border border-[#EEDFD7] bg-white p-6 shadow-sm">
         {hospitals.length > 1 && (
           <div className="mb-5">
@@ -514,6 +514,7 @@ export default function AdminDashboard() {
   const router = useRouter();
   const [activeNav, setActiveNav] = useState("Dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -708,9 +709,63 @@ export default function AdminDashboard() {
             <p className="text-xs font-medium text-[#9C8276]">VitaData administration</p>
             <p className="text-sm font-bold text-[#3D2010]">{data?.hospitals?.length === 1 ? data.hospitals[0].name : "Healthcare network"}</p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="hidden text-right sm:block"><p className="text-sm font-semibold text-[#3D2010]">{adminName}</p><p className="text-xs text-[#9C8276]">{adminRole}</p></div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#F0CDBB] bg-[#FFF1E8] text-sm font-bold text-[#D97757]">{adminName.charAt(0)}</div>
+          <div className="relative flex items-center gap-3">
+            <button 
+              onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+              className="flex items-center gap-3 focus:outline-none hover:opacity-90 text-left"
+            >
+              <div className="hidden text-right sm:block">
+                <p className="text-sm font-semibold text-[#3D2010]">{adminName}</p>
+                <p className="text-xs text-[#9C8276]">{adminRole}</p>
+              </div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#F0CDBB] bg-[#FFF1E8] text-sm font-bold text-[#D97757]">
+                {adminName.charAt(0)}
+              </div>
+            </button>
+
+            {isProfileDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsProfileDropdownOpen(false)} />
+                <div className="absolute right-0 top-12 z-50 w-56 rounded-2xl border border-[#EEDFD7] bg-white p-2 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="px-3 py-2 border-b border-[#F3EAE5] mb-1">
+                    <p className="text-xs text-[#9C8276] font-medium font-sans">Logged in as</p>
+                    <p className="text-sm font-bold text-[#3D2010]">{adminName}</p>
+                  </div>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); alert("Settings config: Theme & notifications preferences are set to auto-detect."); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    Settings
+                  </button>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); alert("Contact Us:\nSupport: support@vitadata.example\nPhone: +91-80-VITA-DATA"); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    Contact Us
+                  </button>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); alert("About VitaData:\nVersion 1.0.0 (Production)\nAdvanced Clinical Workspace Platform."); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    About Page
+                  </button>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); alert("Theme Selector:\nSystem theme is currently set to Warm Gold / Autumn Sunset (Aesthetic Default)."); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    Theme
+                  </button>
+                  <div className="border-t border-[#F3EAE5] mt-1 pt-1">
+                    <button
+                      onClick={() => { setIsProfileDropdownOpen(false); logout(); }}
+                      className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </header>
 

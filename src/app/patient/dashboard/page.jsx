@@ -328,6 +328,8 @@ export default function PatientDashboard() {
   const [medDashboard, setMedDashboard] = useState(null);
 
   // Form States
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [selectedSpecialty, setSelectedSpecialty] = useState("");
   const [selectedHospitalId, setSelectedHospitalId] = useState("");
   const [bookingForm, setBookingForm] = useState({
     doctorId: "",
@@ -516,10 +518,32 @@ export default function PatientDashboard() {
     : null;
   const latestMedications = latestPrescription ? latestPrescription.medicines : [];
 
-  // Filter doctors based on selected hospital
-  const filteredDoctors = selectedHospitalId
-    ? doctors.filter(doc => doc.hospitalId === selectedHospitalId)
-    : doctors;
+  // Extract unique doctor specialties
+  const specialties = useMemo(() => {
+    const set = new Set();
+    doctors.forEach(d => {
+      if (d.specialty) set.add(d.specialty);
+    });
+    return Array.from(set).sort();
+  }, [doctors]);
+
+  // Filter hospitals that have doctors of selectedSpecialty
+  const filteredHospitals = useMemo(() => {
+    if (!selectedSpecialty) return [];
+    const matchingHospitalIds = new Set();
+    doctors.forEach(doc => {
+      if (doc.specialty === selectedSpecialty && doc.hospitalId) {
+        matchingHospitalIds.add(doc.hospitalId);
+      }
+    });
+    return hospitals.filter(h => matchingHospitalIds.has(h.id));
+  }, [selectedSpecialty, doctors, hospitals]);
+
+  // Filter doctors based on selected specialty and selected hospital
+  const filteredDoctors = useMemo(() => {
+    if (!selectedSpecialty || !selectedHospitalId) return [];
+    return doctors.filter(doc => doc.specialty === selectedSpecialty && doc.hospitalId === selectedHospitalId);
+  }, [selectedSpecialty, selectedHospitalId, doctors]);
 
   // Actions
   const handleBookAppointment = async (e) => {
@@ -571,6 +595,7 @@ export default function PatientDashboard() {
       });
       setBookingDate("");
       setBookingSlot("");
+      setSelectedSpecialty("");
       setSelectedHospitalId("");
       setActiveNav("My Appointments");
     } catch (err) {
@@ -943,14 +968,32 @@ export default function PatientDashboard() {
         <form onSubmit={handleBookAppointment} className="space-y-4">
           <div>
             <AutocompleteSelect
+              label="Select Doctor Type"
+              value={selectedSpecialty}
+              onChange={(val) => {
+                setSelectedSpecialty(val);
+                setSelectedHospitalId("");
+                setBookingForm({ ...bookingForm, doctorId: "" });
+              }}
+              options={specialties.map(spec => ({
+                id: spec,
+                name: spec
+              }))}
+              placeholder="Type to search specialty (e.g. Cardiology, Orthopedics)..."
+              required
+            />
+          </div>
+
+          <div>
+            <AutocompleteSelect
               label="Select Hospital Location"
               value={selectedHospitalId}
               onChange={(val) => { setSelectedHospitalId(val); setBookingForm({ ...bookingForm, doctorId: "" }); }}
-              options={hospitals.map(h => ({
+              options={filteredHospitals.map(h => ({
                 id: h.id,
                 name: `${h.name} (${h.city})`
               }))}
-              placeholder="Type to search hospital by location..."
+              placeholder={selectedSpecialty ? "Type to search hospital by location..." : "Please select doctor type first"}
               required
             />
           </div>
@@ -964,7 +1007,7 @@ export default function PatientDashboard() {
                 id: d.id,
                 name: `${d.name} (${d.specialty})`
               }))}
-              placeholder={selectedHospitalId ? "Type to search clinician..." : "Please select a hospital first"}
+              placeholder={selectedHospitalId ? "Type to search clinician..." : "Please select hospital location first"}
               required
             />
           </div>
@@ -1041,7 +1084,7 @@ export default function PatientDashboard() {
       "Book Appointment": renderBookAppointment(),
       "My Appointments": (
         <>
-          <SectionHeader title="Consultation History" description="Log of all appointments booked by you." />
+          <SectionHeader description="Log of all appointments booked by you." />
           <DataTable
             rows={appointments}
             keyFor={(row) => row.id}
@@ -1236,14 +1279,67 @@ export default function PatientDashboard() {
             <p className="text-xs font-medium text-[#9C8276]">Personal Patient Health Records</p>
             <p className="text-sm font-bold text-[#3D2010]">VitaData Health Portal</p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="hidden text-right sm:block">
-              <p className="text-sm font-semibold text-[#3D2010]">{patientName}</p>
-              <p className="text-xs text-[#9C8276]">Patient User</p>
-            </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#F0CDBB] bg-[#FFF1E8] text-sm font-bold text-[#D97757]">
-              {patientName.charAt(0)}
-            </div>
+          <div className="relative flex items-center gap-3">
+            <button 
+              onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+              className="flex items-center gap-3 focus:outline-none hover:opacity-90 text-left"
+            >
+              <div className="hidden text-right sm:block">
+                <p className="text-sm font-semibold text-[#3D2010]">{patientName}</p>
+                <p className="text-xs text-[#9C8276]">Patient User</p>
+              </div>
+              {profile?.profile ? (
+                <img src={profile.profile} alt={patientName} className="h-10 w-10 rounded-full border border-[#F0CDBB] object-cover" />
+              ) : (
+                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#F0CDBB] bg-[#FFF1E8] text-sm font-bold text-[#D97757]">
+                  {patientName.charAt(0)}
+                </div>
+              )}
+            </button>
+
+            {isProfileDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsProfileDropdownOpen(false)} />
+                <div className="absolute right-0 top-12 z-50 w-56 rounded-2xl border border-[#EEDFD7] bg-white p-2 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="px-3 py-2 border-b border-[#F3EAE5] mb-1">
+                    <p className="text-xs text-[#9C8276] font-medium font-sans">Logged in as</p>
+                    <p className="text-sm font-bold text-[#3D2010]">{patientName}</p>
+                  </div>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); alert("Settings config: Theme & preferences are set to auto-detect."); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    Settings
+                  </button>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); alert("Contact Us:\nSupport: support@vitadata.example\nPhone: +91-80-VITA-DATA"); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    Contact Us
+                  </button>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); alert("About VitaData:\nVersion 1.0.0 (Production)\nAdvanced Clinical Workspace Platform."); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    About Page
+                  </button>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); alert("Theme Selector:\nSystem theme is currently set to Warm Gold / Autumn Sunset (Aesthetic Default)."); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    Theme
+                  </button>
+                  <div className="border-t border-[#F3EAE5] mt-1 pt-1">
+                    <button
+                      onClick={() => { setIsProfileDropdownOpen(false); logout(); }}
+                      className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </header>
 

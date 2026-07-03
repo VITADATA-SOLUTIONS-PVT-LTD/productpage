@@ -302,6 +302,7 @@ export default function ReceptionistDashboard() {
   const router = useRouter();
   const [activeNav, setActiveNav] = useState("Dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
@@ -927,7 +928,7 @@ export default function ReceptionistDashboard() {
       "Book Appointment": renderBookAppointment(),
       Appointments: (
         <>
-          <SectionHeader title="Appointments Queue" description="Full log of clinical encounters linked to your Hospital." />
+          <SectionHeader description="Full log of clinical encounters linked to your Hospital." />
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-[#EEDFD7] bg-white p-4 shadow-sm">
             <div className="flex items-center gap-3">
               <span className="text-sm font-semibold text-[#554238]">Consultation Date:</span>
@@ -993,7 +994,7 @@ export default function ReceptionistDashboard() {
       ),
       Patients: (
         <>
-          <SectionHeader title="Hospital Patients" description="Complete registry of patient identities." />
+          <SectionHeader description="Complete registry of patient identities." />
           <DataTable
             rows={patients}
             keyFor={(row) => row.patientId}
@@ -1062,14 +1063,63 @@ export default function ReceptionistDashboard() {
             <p className="text-xs font-medium text-[#9C8276]">Front Desk Operations</p>
             <p className="text-sm font-bold text-[#3D2010]">{hospitalName}</p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="hidden text-right sm:block">
-              <p className="text-sm font-semibold text-[#3D2010]">{receptionistName}</p>
-              <p className="text-xs text-[#9C8276]">Receptionist</p>
-            </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#F0CDBB] bg-[#FFF1E8] text-sm font-bold text-[#D97757]">
-              {receptionistName.charAt(0)}
-            </div>
+          <div className="relative flex items-center gap-3">
+            <button 
+              onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+              className="flex items-center gap-3 focus:outline-none hover:opacity-90 text-left"
+            >
+              <div className="hidden text-right sm:block">
+                <p className="text-sm font-semibold text-[#3D2010]">{receptionistName}</p>
+                <p className="text-xs text-[#9C8276]">Receptionist</p>
+              </div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#F0CDBB] bg-[#FFF1E8] text-sm font-bold text-[#D97757]">
+                {receptionistName.charAt(0)}
+              </div>
+            </button>
+
+            {isProfileDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsProfileDropdownOpen(false)} />
+                <div className="absolute right-0 top-12 z-50 w-56 rounded-2xl border border-[#EEDFD7] bg-white p-2 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="px-3 py-2 border-b border-[#F3EAE5] mb-1">
+                    <p className="text-xs text-[#9C8276] font-medium font-sans">Logged in as</p>
+                    <p className="text-sm font-bold text-[#3D2010]">{receptionistName}</p>
+                  </div>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); alert("Settings config: Theme & preferences are set to auto-detect."); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    Settings
+                  </button>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); alert("Contact Us:\nSupport: support@vitadata.example\nPhone: +91-80-VITA-DATA"); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    Contact Us
+                  </button>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); alert("About VitaData:\nVersion 1.0.0 (Production)\nAdvanced Clinical Workspace Platform."); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    About Page
+                  </button>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); alert("Theme Selector:\nSystem theme is currently set to Warm Gold / Autumn Sunset (Aesthetic Default)."); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    Theme
+                  </button>
+                  <div className="border-t border-[#F3EAE5] mt-1 pt-1">
+                    <button
+                      onClick={() => { setIsProfileDropdownOpen(false); logout(); }}
+                      className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </header>
 
