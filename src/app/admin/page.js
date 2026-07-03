@@ -160,7 +160,7 @@ export default function AdminLoginPage() {
                 {/* Footer Link */}
                 <p className="text-[#9C8276] text-[14px]">
                     Don&apos;t have an account?{' '}
-                    <Link href={"./adminSignup"} className="text-[#D97757] hover:underline font-medium focus:outline-none">
+                    <Link href={"/signup"} className="text-[#D97757] hover:underline font-medium focus:outline-none">
                         Sign up
                     </Link>
                 </p>

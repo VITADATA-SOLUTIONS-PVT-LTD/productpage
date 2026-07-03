@@ -303,6 +303,59 @@ export default function ReceptionistDashboard() {
   const [activeNav, setActiveNav] = useState("Dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [profileModalMode, setProfileModalMode] = useState("view"); // "view" or "edit"
+  const [editForm, setEditForm] = useState({
+    firstName: "",
+    lastName: "",
+    phoneNumber: "",
+    emergencyContact: "",
+  });
+
+  useEffect(() => {
+    if (profile) {
+      setEditForm({
+        firstName: profile.firstName || "",
+        lastName: profile.lastName || "",
+        phoneNumber: profile.phoneNumber || "",
+        emergencyContact: profile.emergencyContact || "",
+      });
+    }
+  }, [profile, isProfileModalOpen]);
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccessMsg("");
+    setSubmitting(true);
+    const token = localStorage.getItem("receptionistToken");
+
+    try {
+      const res = await fetch(`${apiBaseUrl}/users/profile/update`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(editForm),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to update profile");
+
+      setSuccessMsg("Profile updated successfully!");
+      setIsProfileModalOpen(false);
+      
+      // Force reload data
+      localStorage.removeItem("receptionist_cached_profile");
+      loadData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
@@ -1086,6 +1139,18 @@ export default function ReceptionistDashboard() {
                     <p className="text-sm font-bold text-[#3D2010]">{receptionistName}</p>
                   </div>
                   <button
+                    onClick={() => { setIsProfileDropdownOpen(false); setProfileModalMode("view"); setIsProfileModalOpen(true); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    View Profile
+                  </button>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); setProfileModalMode("edit"); setIsProfileModalOpen(true); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    Edit Profile
+                  </button>
+                  <button
                     onClick={() => { setIsProfileDropdownOpen(false); alert("Settings config: Theme & preferences are set to auto-detect."); }}
                     className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
                   >
@@ -1155,6 +1220,134 @@ export default function ReceptionistDashboard() {
             <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#F3DED2] border-t-[#D97757] mb-4" />
             <h3 className="font-bold text-lg text-[#3D2010] mb-1">Processing Request</h3>
             <p className="text-sm text-[#8B7469]">Please do not close this window or navigate away while we update the system.</p>
+          </div>
+        </div>
+      )}
+      {isProfileModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-[#F3EAE5] shadow-2xl p-6 sm:p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto relative animate-in zoom-in-95 duration-200">
+            <button 
+              onClick={() => setIsProfileModalOpen(false)}
+              className="absolute right-4 top-4 rounded-full p-1.5 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+
+            <h2 className="text-xl font-bold text-[#3D2010] mb-6 font-sans">
+              {profileModalMode === "view" ? "My Profile" : "Edit Profile"}
+            </h2>
+
+            {profileModalMode === "view" ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-4 pb-4 border-b border-[#F3EAE5]">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-[#F0CDBB] bg-[#FFF1E8] text-2xl font-bold text-[#D97757]">
+                    {receptionistName.charAt(0)}
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-[#3D2010]">{receptionistName}</h3>
+                    <p className="text-xs text-[#9C8276] font-medium font-sans">Receptionist Account</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2 sm:col-span-1">
+                    <p className="text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-0.5">Email Address</p>
+                    <p className="text-sm font-medium text-[#3D2010] break-all">{profile?.email || "—"}</p>
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <p className="text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-0.5">Phone Number</p>
+                    <p className="text-sm font-medium text-[#3D2010]">{profile?.phoneNumber || "—"}</p>
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <p className="text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-0.5">Emergency Contact</p>
+                    <p className="text-sm font-medium text-[#3D2010]">{profile?.emergencyContact || "—"}</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t border-[#F3EAE5] mt-6">
+                  <button
+                    type="button"
+                    onClick={() => setProfileModalMode("edit")}
+                    className="flex-1 py-2.5 rounded-xl text-white font-bold bg-[#3D2010] hover:bg-[#D97757] transition-colors text-sm font-sans"
+                  >
+                    Edit Profile
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsProfileModalOpen(false)}
+                    className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-bold text-gray-500 hover:bg-gray-50 font-sans"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleUpdateProfile} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-1 font-sans">First Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={editForm.firstName}
+                      onChange={(e) => setEditForm(p => ({ ...p, firstName: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-1 font-sans">Last Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={editForm.lastName}
+                      onChange={(e) => setEditForm(p => ({ ...p, lastName: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-1 font-sans">Phone Number</label>
+                    <input
+                      type="text"
+                      required
+                      value={editForm.phoneNumber}
+                      onChange={(e) => setEditForm(p => ({ ...p, phoneNumber: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-1 font-sans">Emergency Contact</label>
+                    <input
+                      type="text"
+                      value={editForm.emergencyContact}
+                      onChange={(e) => setEditForm(p => ({ ...p, emergencyContact: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t border-[#F3EAE5] mt-6">
+                  <button
+                    type="submit"
+                    className="flex-1 py-2.5 rounded-xl text-white font-bold bg-[#3D2010] hover:bg-[#D97757] transition-colors text-sm font-sans"
+                  >
+                    Save Changes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProfileModalMode("view")}
+                    className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-bold text-gray-500 hover:bg-gray-50 font-sans"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

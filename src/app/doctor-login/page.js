@@ -1,5 +1,5 @@
 "use client"
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -27,6 +27,14 @@ export default function DoctorLoginPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const router = useRouter();
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const err = params.get('error');
+        if (err) {
+            setError(decodeURIComponent(err));
+        }
+    }, []);
 
     const apiBaseUrl = process.env.NEXT_PUBLIC_URL || process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL;
 
@@ -137,6 +145,13 @@ export default function DoctorLoginPage() {
                         {loading ? 'Signing In...' : 'Sign In'}
                     </button>
 
+                    <div className="text-center mb-4">
+                        <span className="text-xs text-gray-500 font-sans">Don't have an account? </span>
+                        <Link href="/signup" className="text-xs font-bold text-[#D97757] hover:underline">
+                            Apply/Sign Up
+                        </Link>
+                    </div>
+
                     {/* Divider */}
                     <div className="relative flex items-center justify-center mb-4">
                         <div className="absolute w-full border-t border-[#E5E7EB]"></div>
@@ -148,7 +163,7 @@ export default function DoctorLoginPage() {
                         type="button"
                         onClick={() => {
                             if (!apiBaseUrl) return;
-                            window.location.href = `${apiBaseUrl}/auth/google`;
+                            window.location.href = `${apiBaseUrl}/auth/google?state=${encodeURIComponent(window.location.pathname)}`;
                         }}
                         className="hover-lift w-full bg-white border border-[rgba(255,204,172,0.4)] hover:bg-[rgba(255,204,172,0.1)] text-[#3D2010] font-semibold py-2 sm:py-2.5 rounded-lg transition-colors text-[12px] sm:text-[13px] flex items-center justify-center gap-2 mb-5"
                     >

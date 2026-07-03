@@ -438,8 +438,10 @@ export default function DoctorDashboard() {
   // Profile & Modal States
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  const [isViewProfileOpen, setIsViewProfileOpen] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [editProfileForm, setEditProfileForm] = useState({
+    phoneNumber: "",
     emergencyContact: "",
     isAvailable: true,
     consultationFee: "",
@@ -448,6 +450,7 @@ export default function DoctorDashboard() {
   useEffect(() => {
     if (profile) {
       setEditProfileForm({
+        phoneNumber: profile.phoneNumber || "",
         emergencyContact: profile.emergencyContact || "",
         isAvailable: profile.doctor?.isAvailable !== false,
         consultationFee: profile.doctor?.consultationFee || "500",
@@ -722,6 +725,7 @@ export default function DoctorDashboard() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
+          phoneNumber: editProfileForm.phoneNumber,
           emergencyContact: editProfileForm.emergencyContact,
           isAvailable: editProfileForm.isAvailable,
           consultationFee: editProfileForm.consultationFee,
@@ -1689,6 +1693,12 @@ export default function DoctorDashboard() {
                     <p className="text-sm font-bold text-[#3D2010]">Dr. {doctorName}</p>
                   </div>
                   <button
+                    onClick={() => { setIsProfileDropdownOpen(false); setIsViewProfileOpen(true); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    View Profile
+                  </button>
+                  <button
                     onClick={() => { setIsProfileDropdownOpen(false); setIsEditProfileOpen(true); }}
                     className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
                   >
@@ -1820,11 +1830,17 @@ export default function DoctorDashboard() {
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="block text-xs font-semibold text-[#8B7469] uppercase tracking-wider mb-1">Phone Number (Verified)</label>
-                  <input type="text" value={profile?.phoneNumber || ""} disabled className="w-full rounded-xl border border-[#F2D7C8] bg-[#FFF9F5] px-4 py-2 text-sm text-[#806B61] cursor-not-allowed" />
+                  <label className="block text-xs font-semibold text-[#554238] uppercase mb-1 font-sans">Phone Number</label>
+                  <input
+                    type="text"
+                    required
+                    value={editProfileForm.phoneNumber}
+                    onChange={e => setEditProfileForm({ ...editProfileForm, phoneNumber: e.target.value })}
+                    className="w-full rounded-xl border border-[#E3D4CC] bg-white px-4 py-2 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-[#8B7469] uppercase tracking-wider mb-1">Email Address (Verified)</label>
+                  <label className="block text-xs font-semibold text-[#8B7469] uppercase tracking-wider mb-1 font-sans">Email Address (Verified)</label>
                   <input type="text" value={profile?.email || ""} disabled className="w-full rounded-xl border border-[#F2D7C8] bg-[#FFF9F5] px-4 py-2 text-sm text-[#806B61] cursor-not-allowed" />
                 </div>
               </div>
@@ -1885,6 +1901,95 @@ export default function DoctorDashboard() {
           </div>
         </div>
       )}
+        {isViewProfileOpen && (
+          <div className="fixed inset-0 z-[9990] flex items-center justify-center bg-black/45 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl border border-[#EEDFD7] p-6 shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto relative">
+              <button 
+                onClick={() => setIsViewProfileOpen(false)}
+                className="absolute right-4 top-4 rounded-full p-1.5 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+
+              <h2 className="text-xl font-bold text-[#3D2010] mb-6 font-sans">Doctor Profile</h2>
+
+              <div className="space-y-4">
+                <div className="flex items-center gap-4 pb-4 border-b border-[#F3EAE5]">
+                  {profile?.profile ? (
+                    <img src={profile.profile} alt={doctorName} className="h-16 w-16 rounded-full border border-[#F0CDBB] object-cover" />
+                  ) : (
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-[#F0CDBB] bg-[#FFF1E8] text-2xl font-bold text-[#D97757]">
+                      {doctorName.charAt(0)}
+                    </div>
+                  )}
+                  <div>
+                    <h3 className="text-lg font-bold text-[#3D2010]">Dr. {doctorName}</h3>
+                    <p className="text-xs text-[#9C8276] font-medium font-sans">{profile?.doctor?.specialization || "Clinician"}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2 sm:col-span-1">
+                    <p className="text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-0.5">Doctor ID</p>
+                    <p className="text-sm font-medium text-[#3D2010]">{profile?.doctor?.doctorId || "—"}</p>
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <p className="text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-0.5">Specialization</p>
+                    <p className="text-sm font-medium text-[#3D2010]">{profile?.doctor?.specialization || "—"}</p>
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <p className="text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-0.5">Email Address</p>
+                    <p className="text-sm font-medium text-[#3D2010] break-all">{profile?.email || "—"}</p>
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <p className="text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-0.5">Phone Number</p>
+                    <p className="text-sm font-medium text-[#3D2010]">{profile?.phoneNumber || "—"}</p>
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <p className="text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-0.5">Emergency Contact</p>
+                    <p className="text-sm font-medium text-[#3D2010]">{profile?.emergencyContact || "—"}</p>
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <p className="text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-0.5">Consultation Fee</p>
+                    <p className="text-sm font-semibold text-[#D97757]">
+                      {profile?.doctor?.consultationFee ? `₹${profile.doctor.consultationFee}` : "—"}
+                    </p>
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <p className="text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-0.5">Availability Status</p>
+                    <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+                      profile?.doctor?.isAvailable 
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700" 
+                        : "border-red-200 bg-red-50 text-red-700"
+                    }`}>
+                      {profile?.doctor?.isAvailable ? "Available" : "Unavailable"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t border-[#F3EAE5] mt-6">
+                  <button
+                    type="button"
+                    onClick={() => { setIsViewProfileOpen(false); setIsEditProfileOpen(true); }}
+                    className="flex-1 py-2.5 rounded-xl text-white font-bold bg-[#3D2010] hover:bg-[#D97757] transition-colors text-sm font-sans"
+                  >
+                    Edit Profile
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsViewProfileOpen(false)}
+                    className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-bold text-gray-500 hover:bg-gray-50 font-sans"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   );
 }

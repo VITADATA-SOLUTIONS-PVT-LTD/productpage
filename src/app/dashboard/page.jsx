@@ -8,6 +8,7 @@ import DashboardCalendar from "@/components/DashboardCalendar";
 
 const navItems = [
   "Dashboard",
+  "Pending Requests",
   "Doctors",
   "Receptionists",
   "Lab Staff",
@@ -97,7 +98,7 @@ function SectionHeader({ title, description, action }) {
   );
 }
 
-function DataTable({ columns, rows, keyFor, emptyMessage }) {
+function DataTable({ columns, rows, keyFor, emptyMessage, filterSlot }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -130,7 +131,10 @@ function DataTable({ columns, rows, keyFor, emptyMessage }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex-1 min-w-[200px]">
+          {filterSlot}
+        </div>
         <div className="relative w-full max-w-xs">
           <input
             type="text"
@@ -275,83 +279,748 @@ function DashboardOverview({ data }) {
   );
 }
 
-function DoctorsView({ rows }) {
+function DoctorScheduleModal({ doctor, appointments, onClose }) {
+  const docAppointments = React.useMemo(() => {
+    return appointments.filter(
+      (a) => a.doctorId === doctor.doctorId && new Date(a.scheduledTime) >= new Date()
+    );
+  }, [doctor, appointments]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-3xl border border-[#EEDFD7] shadow-2xl p-6 max-w-lg w-full relative">
+        <button onClick={onClose} className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 text-lg font-bold">&times;</button>
+        <h3 className="text-base font-bold text-[#3D2010] mb-1 font-sans">Upcoming Schedule: Dr. {fullName(doctor.user)}</h3>
+        <p className="text-xs text-[#8B7469] mb-4 font-sans font-medium">List of upcoming scheduled consultations</p>
+
+        <div className="max-h-[300px] overflow-y-auto space-y-2.5 pr-1">
+          {docAppointments.length === 0 ? (
+            <p className="text-xs text-gray-500 font-sans">No upcoming consultations scheduled.</p>
+          ) : (
+            docAppointments.map((appt) => (
+              <div key={appt.encounterId} className="p-3 bg-[#FFF9F5] border border-[#EEDFD7] rounded-xl flex justify-between items-center text-xs">
+                <div>
+                  <p className="font-semibold text-[#3D2010]">{fullName(appt.patient?.user)}</p>
+                  <p className="text-[10px] text-gray-500 font-sans mt-0.5">{appt.hospital?.name}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold text-[#D97757] font-sans">{formatDate(appt.scheduledTime, true)}</p>
+                  <p className="text-[10px] text-gray-500 font-sans mt-0.5">{appt.reason || "General Checkup"}</p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DoctorAvailabilityModal({ doctor, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-3xl border border-[#EEDFD7] shadow-2xl p-6 max-w-md w-full relative">
+        <button onClick={onClose} className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 text-lg font-bold">&times;</button>
+        <h3 className="text-base font-bold text-[#3D2010] mb-1 font-sans">Clinician Availability: Dr. {fullName(doctor.user)}</h3>
+        <p className="text-xs text-[#8B7469] mb-4 font-sans font-medium">Weekly availability schedule per linked hospital location</p>
+
+        <div className="max-h-[300px] overflow-y-auto space-y-4 pr-1">
+          {doctor.hospitals.length === 0 ? (
+            <p className="text-xs text-gray-500 font-sans font-medium">No linked hospitals registered.</p>
+          ) : (
+            doctor.hospitals.map((hosp) => (
+              <div key={hosp.hospitalId} className="p-4 bg-[#FFF9F5] border border-[#EEDFD7] rounded-2xl">
+                <p className="font-bold text-xs text-[#3D2010] border-b border-[#EEDFD7] pb-1.5 mb-2 font-sans">{hosp.name}</p>
+                <div className="space-y-1.5 text-xs text-gray-600 font-sans">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-gray-500">Monday - Friday:</span>
+                    <span className="font-bold text-[#D97757]">09:00 AM - 05:00 PM</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium text-gray-500">Saturday:</span>
+                    <span className="font-bold text-[#D97757]">09:00 AM - 01:00 PM</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium text-gray-500">Sunday:</span>
+                    <span className="text-gray-400 font-medium">Closed</span>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AddStaffModal({ isOpen, onClose, role, hospitals, onSuccess }) {
+  const [form, setForm] = useState({
+    firstName: '',
+    lastName: '',
+    phoneNumber: '',
+    email: '',
+    password: '',
+    hospitalId: hospitals[0]?.hospitalId || '',
+    specialization: 'GENERAL_PRACTICE',
+    licenseNo: '',
+    shift: 'MORNING',
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (hospitals.length > 0) {
+      setForm(prev => ({ ...prev, hospitalId: hospitals[0].hospitalId }));
+    }
+  }, [hospitals, isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    try {
+      const token = localStorage.getItem("adminToken");
+      const response = await fetch(`${apiBaseUrl}/users/signup-request`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          ...form,
+          role,
+        })
+      });
+
+      const resData = await response.json();
+      if (!response.ok || resData.status === 'ERROR') {
+        throw new Error(resData.message || 'Failed to create staff member');
+      }
+
+      onSuccess();
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Creation failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-3xl border border-[#EEDFD7] shadow-2xl p-6 sm:p-8 max-w-md w-full relative max-h-[90vh] overflow-y-auto">
+        <button onClick={onClose} className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 text-lg font-bold">&times;</button>
+        <h2 className="text-base font-bold text-[#3D2010] mb-1 font-sans">Add New {String(role).replace('_', ' ')}</h2>
+        <p className="text-xs text-gray-500 mb-4 font-sans font-medium">Directly register a verified clinical staff member.</p>
+
+        {error && (
+          <div className="mb-4 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 px-3 py-2">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-[#8B7469] uppercase tracking-wider mb-1.5 font-sans">First Name</label>
+              <input
+                type="text"
+                required
+                value={form.firstName}
+                onChange={e => setForm(p => ({ ...p, firstName: e.target.value }))}
+                placeholder="John"
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-[#D97757]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-[#8B7469] uppercase tracking-wider mb-1.5 font-sans">Last Name</label>
+              <input
+                type="text"
+                required
+                value={form.lastName}
+                onChange={e => setForm(p => ({ ...p, lastName: e.target.value }))}
+                placeholder="Doe"
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-[#D97757]"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-[#8B7469] uppercase tracking-wider mb-1.5 font-sans">Phone Number</label>
+            <input
+              type="text"
+              required
+              value={form.phoneNumber}
+              onChange={e => setForm(p => ({ ...p, phoneNumber: e.target.value }))}
+              placeholder="e.g. 9876543210"
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-[#D97757]"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-[#8B7469] uppercase tracking-wider mb-1.5 font-sans">Email Address</label>
+            <input
+              type="email"
+              value={form.email}
+              onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+              placeholder="e.g. staff@example.com"
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-[#D97757]"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-[#8B7469] uppercase tracking-wider mb-1.5 font-sans">Password</label>
+            <input
+              type="password"
+              required
+              value={form.password}
+              onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+              placeholder="••••••••"
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-[#D97757]"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-[#8B7469] uppercase tracking-wider mb-1.5 font-sans">Assign Hospital</label>
+            <select
+              value={form.hospitalId}
+              onChange={e => setForm(p => ({ ...p, hospitalId: e.target.value }))}
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white text-sm outline-none focus:border-[#D97757] font-sans"
+            >
+              {hospitals.map(h => (
+                <option key={h.hospitalId} value={h.hospitalId}>{h.name} — {h.city}</option>
+              ))}
+            </select>
+          </div>
+
+          {role === 'DOCTOR' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-[#8B7469] uppercase tracking-wider mb-1.5 font-sans">Specialization</label>
+                <select
+                  value={form.specialization}
+                  onChange={e => setForm(p => ({ ...p, specialization: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white text-sm outline-none focus:border-[#D97757] font-sans"
+                >
+                  <option value="CARDIOLOGY">Cardiology</option>
+                  <option value="NEUROLOGY">Neurology</option>
+                  <option value="ORTHOPEDICS">Orthopedics</option>
+                  <option value="GENERAL_SURGERY">General Surgery</option>
+                  <option value="DERMATOLOGY">Dermatology</option>
+                  <option value="PSYCHIATRY">Psychiatry</option>
+                  <option value="PEDIATRICS">Pediatrics</option>
+                  <option value="GYNECOLOGY">Gynecology</option>
+                  <option value="ENT">ENT</option>
+                  <option value="OPHTHALMOLOGY">Ophthalmology</option>
+                  <option value="GENERAL_PRACTICE">General Practice</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-[#8B7469] uppercase tracking-wider mb-1.5 font-sans">License Number</label>
+                <input
+                  type="text"
+                  required
+                  value={form.licenseNo}
+                  onChange={e => setForm(p => ({ ...p, licenseNo: e.target.value }))}
+                  placeholder="MC-123456"
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-[#D97757]"
+                />
+              </div>
+            </div>
+          )}
+
+          {role === 'RECEPTIONIST' && (
+            <div>
+              <label className="block text-xs font-bold text-[#8B7469] uppercase tracking-wider mb-1.5 font-sans">Shift Duty</label>
+              <select
+                value={form.shift}
+                onChange={e => setForm(p => ({ ...p, shift: e.target.value }))}
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white text-sm outline-none focus:border-[#D97757] font-sans"
+              >
+                <option value="MORNING">Morning Shift</option>
+                <option value="AFTERNOON">Afternoon Shift</option>
+                <option value="NIGHT">Night Shift</option>
+              </select>
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-500 hover:bg-gray-50 font-sans"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 py-2.5 rounded-xl text-white font-bold bg-[#3D2010] hover:bg-[#D97757] transition-colors disabled:opacity-50 text-xs font-sans"
+            >
+              {loading ? 'Registering...' : 'Register'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function PendingRequestsView() {
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [processingId, setProcessingId] = useState(null);
+
+  const fetchRequests = async () => {
+    try {
+      const token = localStorage.getItem("adminToken");
+      const response = await fetch(`${apiBaseUrl}/admin/pending-requests`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const resData = await response.json();
+      if (resData.status === 'OK') {
+        setRequests(resData.data);
+      } else {
+        setError(resData.message || "Failed to load requests");
+      }
+    } catch (err) {
+      setError("Failed to load pending requests");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRequests();
+  }, []);
+
+  const handleAction = async (userId, action) => {
+    setProcessingId(userId);
+    try {
+      const token = localStorage.getItem("adminToken");
+      const response = await fetch(`${apiBaseUrl}/admin/pending-requests/${userId}/${action}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const resData = await response.json();
+      if (resData.status === 'OK') {
+        fetchRequests();
+      } else {
+        alert(resData.message || "Action failed");
+      }
+    } catch (err) {
+      alert("Action failed");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  if (loading) return <div className="text-sm text-gray-500 font-sans p-4">Loading pending verification requests...</div>;
+  if (error) return <div className="text-sm text-red-500 font-sans p-4">{error}</div>;
+
   return (
     <>
-      <SectionHeader description="Verified clinicians linked to the hospitals you manage." />
+      <SectionHeader description="Verify and approve clinician, staff, and administrator sign up requests." />
       <DataTable
-        rows={rows}
-        keyFor={(row) => row.doctorId}
-        emptyMessage="No doctors are linked to this hospital."
+        rows={requests}
+        keyFor={(row) => row.userId}
+        emptyMessage="No pending signup requests."
         columns={[
-          { label: "Doctor", render: (row) => <div><p className="font-semibold text-[#3D2010]">{fullName(row.user)}</p><p className="mt-1 text-xs text-[#9C8276]">{row.user?.email || row.user?.phoneNumber}</p></div> },
-          { label: "Specialization", render: (row) => String(row.specialization || "General").replaceAll("_", " ") },
-          { label: "Hospital", render: (row) => row.hospital?.name || "—" },
-          { label: "Consultation", render: (row) => formatCurrency(row.consultationFee) },
-          { label: "Rating", render: (row) => row.avgRating ? `${row.avgRating} / 5` : "Not rated" },
-          { label: "Availability", render: (row) => <StatusBadge value={row.isAvailable ? "ACTIVE" : "UNAVAILABLE"} /> },
+          { label: "Name", render: (row) => <span className="font-semibold text-[#3D2010]">{row.firstName} {row.lastName}</span> },
+          { label: "Role", render: (row) => <span className="text-xs font-bold uppercase tracking-wider text-[#D97757] font-sans">{row.role}</span> },
+          { label: "Hospital", render: (row) => <span className="text-xs font-medium text-gray-600 font-sans">{row.hospitalName}</span> },
+          { label: "Email", render: (row) => <span className="text-xs font-mono">{row.email || "—"}</span> },
+          { label: "Phone", render: (row) => <span className="text-xs font-mono">{row.phoneNumber}</span> },
+          { label: "Requested Date", render: (row) => <span className="text-xs font-sans text-gray-500">{new Date(row.createdAt).toLocaleDateString()}</span> },
+          {
+            label: "Verification Status",
+            render: (row) => (
+              <div className="flex gap-2">
+                <button
+                  disabled={processingId === row.userId}
+                  onClick={() => handleAction(row.userId, 'approve')}
+                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50 font-sans transition-colors"
+                >
+                  Approve
+                </button>
+                <button
+                  disabled={processingId === row.userId}
+                  onClick={() => handleAction(row.userId, 'reject')}
+                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50 font-sans transition-colors"
+                >
+                  Reject
+                </button>
+              </div>
+            )
+          }
         ]}
       />
     </>
   );
 }
 
-function ReceptionistsView({ rows }) {
+function DoctorsView({ rows, appointments = [], hospitals = [], onRefresh }) {
+  const [specialtyFilter, setSpecialtyFilter] = useState("ALL");
+  const [hospitalFilter, setHospitalFilter] = useState("ALL");
+  
+  // Modals state
+  const [selectedDocSchedule, setSelectedDocSchedule] = useState(null);
+  const [selectedDocAvailability, setSelectedDocAvailability] = useState(null);
+  const [isAddOpen, setIsAddOpen] = useState(false);
+
+  // Group doctors
+  const groupedDoctors = React.useMemo(() => {
+    const map = new Map();
+    rows?.forEach((doc) => {
+      if (!map.has(doc.doctorId)) {
+        map.set(doc.doctorId, {
+          ...doc,
+          hospitals: doc.hospital ? [doc.hospital] : [],
+        });
+      } else {
+        const existing = map.get(doc.doctorId);
+        if (doc.hospital && !existing.hospitals.some(h => h.hospitalId === doc.hospital.hospitalId)) {
+          existing.hospitals.push(doc.hospital);
+        }
+      }
+    });
+    return Array.from(map.values());
+  }, [rows]);
+
+  // Apply filters
+  const filteredDoctors = React.useMemo(() => {
+    return groupedDoctors.filter(doc => {
+      const matchSpecialty = specialtyFilter === "ALL" || doc.specialization === specialtyFilter;
+      const matchHospital = hospitalFilter === "ALL" || doc.hospitals.some(h => h.hospitalId === hospitalFilter);
+      return matchSpecialty && matchHospital;
+    });
+  }, [groupedDoctors, specialtyFilter, hospitalFilter]);
+
+  const uniqueSpecialties = React.useMemo(() => {
+    const list = new Set(groupedDoctors.map(d => d.specialization).filter(Boolean));
+    return Array.from(list);
+  }, [groupedDoctors]);
+
+  const uniqueHospitals = React.useMemo(() => {
+    const list = new Map();
+    groupedDoctors.forEach(d => {
+      d.hospitals.forEach(h => {
+        list.set(h.hospitalId, h);
+      });
+    });
+    return Array.from(list.values());
+  }, [groupedDoctors]);
+
   return (
     <>
-      <SectionHeader description="Front-desk staff and their assigned shifts." />
+      <SectionHeader 
+        description="Verified clinicians linked to the hospitals you manage." 
+        action={
+          <button
+            onClick={() => setIsAddOpen(true)}
+            className="rounded-xl bg-[#3D2010] text-white px-4 py-2.5 text-xs font-bold hover:bg-[#D97757] transition-colors font-sans"
+          >
+            + Add Doctor
+          </button>
+        }
+      />
       <DataTable
-        rows={rows}
+        rows={filteredDoctors}
+        keyFor={(row) => row.doctorId}
+        emptyMessage="No doctors match the selected filters."
+        filterSlot={
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-[#8B7469] uppercase tracking-wider font-sans">Specialty:</span>
+              <select
+                value={specialtyFilter}
+                onChange={e => setSpecialtyFilter(e.target.value)}
+                className="rounded-xl border border-[#EEDFD7] bg-white px-3 py-1.5 text-xs text-[#3D2010] outline-none focus:border-[#D97757] font-sans"
+              >
+                <option value="ALL">All Specialties</option>
+                {uniqueSpecialties.map(spec => (
+                  <option key={spec} value={spec}>{String(spec).replaceAll("_", " ")}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-[#8B7469] uppercase tracking-wider font-sans">Hospital:</span>
+              <select
+                value={hospitalFilter}
+                onChange={e => setHospitalFilter(e.target.value)}
+                className="rounded-xl border border-[#EEDFD7] bg-white px-3 py-1.5 text-xs text-[#3D2010] outline-none focus:border-[#D97757] font-sans"
+              >
+                <option value="ALL">All Hospitals</option>
+                {uniqueHospitals.map(h => (
+                  <option key={h.hospitalId} value={h.hospitalId}>{h.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        }
+        columns={[
+          { label: "Doctor", render: (row) => <div><p className="font-semibold text-[#3D2010]">{fullName(row.user)}</p><p className="mt-1 text-xs text-[#9C8276] font-mono">{row.user?.email || row.user?.phoneNumber}</p></div> },
+          { label: "Specialization", render: (row) => <span className="font-medium text-xs font-sans text-gray-700">{String(row.specialization || "General").replaceAll("_", " ")}</span> },
+          { label: "Hospitals", render: (row) => <span className="text-xs font-sans">{row.hospitals.map(h => h.name).join(", ") || "—"}</span> },
+          { label: "Consultation", render: (row) => <span className="font-mono text-xs font-semibold text-gray-800">{formatCurrency(row.consultationFee)}</span> },
+          { 
+            label: "Schedule", 
+            render: (row) => (
+              <button
+                onClick={() => setSelectedDocSchedule(row)}
+                className="rounded-lg border border-[#EEDFD7] px-2.5 py-1 text-xs font-bold text-[#3D2010] hover:border-[#D97757] hover:text-[#D97757] font-sans transition-all"
+              >
+                View Schedule
+              </button>
+            ) 
+          },
+          { 
+            label: "Availability", 
+            render: (row) => (
+              <button
+                onClick={() => setSelectedDocAvailability(row)}
+                className="rounded-lg border border-[#EEDFD7] px-2.5 py-1 text-xs font-bold text-[#3D2010] hover:border-[#D97757] hover:text-[#D97757] font-sans transition-all"
+              >
+                View Availability
+              </button>
+            ) 
+          },
+          { label: "Status", render: (row) => <StatusBadge value={row.isAvailable ? "ACTIVE" : "UNAVAILABLE"} /> },
+        ]}
+      />
+
+      {/* Schedule Modal */}
+      {selectedDocSchedule && (
+        <DoctorScheduleModal 
+          doctor={selectedDocSchedule} 
+          appointments={appointments} 
+          onClose={() => setSelectedDocSchedule(null)} 
+        />
+      )}
+
+      {/* Availability Modal */}
+      {selectedDocAvailability && (
+        <DoctorAvailabilityModal 
+          doctor={selectedDocAvailability} 
+          onClose={() => setSelectedDocAvailability(null)} 
+        />
+      )}
+
+      {/* Add Staff Modal */}
+      <AddStaffModal 
+        isOpen={isAddOpen} 
+        onClose={() => setIsAddOpen(false)} 
+        role="DOCTOR" 
+        hospitals={hospitals} 
+        onSuccess={onRefresh} 
+      />
+    </>
+  );
+}
+
+function ReceptionistsView({ rows, hospitals = [], onRefresh }) {
+  const [shiftFilter, setShiftFilter] = useState("ALL");
+  const [hospitalFilter, setHospitalFilter] = useState("ALL");
+  const [isAddOpen, setIsAddOpen] = useState(false);
+
+  const filteredRows = React.useMemo(() => {
+    return rows.filter(row => {
+      const matchShift = shiftFilter === "ALL" || row.shift === shiftFilter;
+      const matchHospital = hospitalFilter === "ALL" || row.hospital?.hospitalId === hospitalFilter;
+      return matchShift && matchHospital;
+    });
+  }, [rows, shiftFilter, hospitalFilter]);
+
+  return (
+    <>
+      <SectionHeader 
+        description="Front-desk staff and their assigned shifts." 
+        action={
+          <button
+            onClick={() => setIsAddOpen(true)}
+            className="rounded-xl bg-[#3D2010] text-white px-4 py-2.5 text-xs font-bold hover:bg-[#D97757] transition-colors font-sans"
+          >
+            + Add Receptionist
+          </button>
+        }
+      />
+      <DataTable
+        rows={filteredRows}
         keyFor={(row) => row.receptionistId}
-        emptyMessage="No receptionists are assigned to this hospital."
+        emptyMessage="No receptionists match the filters."
+        filterSlot={
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-[#8B7469] uppercase tracking-wider font-sans">Shift:</span>
+              <select
+                value={shiftFilter}
+                onChange={e => setShiftFilter(e.target.value)}
+                className="rounded-xl border border-[#EEDFD7] bg-white px-3 py-1.5 text-xs text-[#3D2010] outline-none focus:border-[#D97757] font-sans"
+              >
+                <option value="ALL">All Shifts</option>
+                <option value="MORNING">Morning</option>
+                <option value="AFTERNOON">Afternoon</option>
+                <option value="NIGHT">Night</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-[#8B7469] uppercase tracking-wider font-sans">Hospital:</span>
+              <select
+                value={hospitalFilter}
+                onChange={e => setHospitalFilter(e.target.value)}
+                className="rounded-xl border border-[#EEDFD7] bg-white px-3 py-1.5 text-xs text-[#3D2010] outline-none focus:border-[#D97757] font-sans"
+              >
+                <option value="ALL">All Hospitals</option>
+                {hospitals.map(h => (
+                  <option key={h.hospitalId} value={h.hospitalId}>{h.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        }
         columns={[
           { label: "Name", render: (row) => <span className="font-semibold text-[#3D2010]">{fullName(row.user)}</span> },
-          { label: "Phone", render: (row) => row.user?.phoneNumber || "—" },
-          { label: "Email", render: (row) => row.user?.email || "—" },
-          { label: "Hospital", render: (row) => row.hospital?.name || "—" },
+          { label: "Phone", render: (row) => <span className="text-xs font-mono">{row.user?.phoneNumber || "—"}</span> },
+          { label: "Email", render: (row) => <span className="text-xs font-mono">{row.user?.email || "—"}</span> },
+          { label: "Hospital", render: (row) => <span className="text-xs font-sans text-gray-700">{row.hospital?.name || "—"}</span> },
           { label: "Shift", render: (row) => <StatusBadge value={row.shift || "UNASSIGNED"} /> },
           { label: "Account", render: (row) => <StatusBadge value={row.user?.isActive ? "ACTIVE" : "INACTIVE"} /> },
         ]}
       />
-    </>
-  );
-}
-
-function LabStaffView({ rows }) {
-  return (
-    <>
-      <SectionHeader description="Lab managers, departments, and diagnostic capacity." />
-      <DataTable
-        rows={rows}
-        keyFor={(row) => row.managerId}
-        emptyMessage="No lab staff are assigned to this hospital."
-        columns={[
-          { label: "Name", render: (row) => <span className="font-semibold text-[#3D2010]">{fullName(row.user)}</span> },
-          { label: "Contact", render: (row) => <div><p>{row.user?.phoneNumber || "—"}</p><p className="mt-1 text-xs text-[#9C8276]">{row.user?.email || "—"}</p></div> },
-          { label: "Department", render: (row) => String(row.department || "Unassigned").replaceAll("_", " ") },
-          { label: "Hospital", render: (row) => row.hospital?.name || "—" },
-          { label: "Labs", render: (row) => row.labs?.map((lab) => lab.name).join(", ") || "No lab assigned" },
-          { label: "Available slots", render: (row) => row.labs?.reduce((sum, lab) => sum + Number(lab.availableSlots || 0), 0) || 0 },
-        ]}
+      <AddStaffModal 
+        isOpen={isAddOpen} 
+        onClose={() => setIsAddOpen(false)} 
+        role="RECEPTIONIST" 
+        hospitals={hospitals} 
+        onSuccess={onRefresh} 
       />
     </>
   );
 }
 
-function AppointmentsView({ rows }) {
+function LabStaffView({ rows, hospitals = [], onRefresh }) {
+  const [hospitalFilter, setHospitalFilter] = useState("ALL");
+  const [isAddOpen, setIsAddOpen] = useState(false);
+
+  const filteredRows = React.useMemo(() => {
+    return rows.filter(row => {
+      return hospitalFilter === "ALL" || row.hospital?.hospitalId === hospitalFilter;
+    });
+  }, [rows, hospitalFilter]);
+
+  return (
+    <>
+      <SectionHeader 
+        description="Lab managers, departments, and diagnostic capacity." 
+        action={
+          <button
+            onClick={() => setIsAddOpen(true)}
+            className="rounded-xl bg-[#3D2010] text-white px-4 py-2.5 text-xs font-bold hover:bg-[#D97757] transition-colors font-sans"
+          >
+            + Add Lab Staff
+          </button>
+        }
+      />
+      <DataTable
+        rows={filteredRows}
+        keyFor={(row) => row.managerId}
+        emptyMessage="No lab staff match the filter."
+        filterSlot={
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-[#8B7469] uppercase tracking-wider font-sans">Hospital:</span>
+            <select
+              value={hospitalFilter}
+              onChange={e => setHospitalFilter(e.target.value)}
+              className="rounded-xl border border-[#EEDFD7] bg-white px-3 py-1.5 text-xs text-[#3D2010] outline-none focus:border-[#D97757] font-sans"
+            >
+              <option value="ALL">All Hospitals</option>
+              {hospitals.map(h => (
+                <option key={h.hospitalId} value={h.hospitalId}>{h.name}</option>
+              ))}
+            </select>
+          </div>
+        }
+        columns={[
+          { label: "Name", render: (row) => <span className="font-semibold text-[#3D2010]">{fullName(row.user)}</span> },
+          { label: "Contact", render: (row) => <div><p className="text-xs font-mono">{row.user?.phoneNumber || "—"}</p><p className="mt-1 text-xs text-[#9C8276] font-mono">{row.user?.email || "—"}</p></div> },
+          { label: "Department", render: (row) => <span className="text-xs font-medium text-gray-700">{String(row.department || "Unassigned").replaceAll("_", " ")}</span> },
+          { label: "Hospital", render: (row) => <span className="text-xs font-sans text-gray-700">{row.hospital?.name || "—"}</span> },
+          { label: "Labs", render: (row) => <span className="text-xs font-sans text-gray-500">{row.labs?.map((lab) => lab.name).join(", ") || "No lab assigned"}</span> },
+          { label: "Available slots", render: (row) => <span className="font-mono text-xs font-semibold text-gray-800">{row.labs?.reduce((sum, lab) => sum + Number(lab.availableSlots || 0), 0) || 0}</span> },
+        ]}
+      />
+      <AddStaffModal 
+        isOpen={isAddOpen} 
+        onClose={() => setIsAddOpen(false)} 
+        role="LAB_MANAGER" 
+        hospitals={hospitals} 
+        onSuccess={onRefresh} 
+      />
+    </>
+  );
+}
+
+function AppointmentsView({ rows, hospitals = [] }) {
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [hospitalFilter, setHospitalFilter] = useState("ALL");
+
+  const filteredRows = React.useMemo(() => {
+    return rows.filter(row => {
+      const matchStatus = statusFilter === "ALL" || row.status === statusFilter;
+      const matchHospital = hospitalFilter === "ALL" || row.hospital?.hospitalId === hospitalFilter;
+      return matchStatus && matchHospital;
+    });
+  }, [rows, statusFilter, hospitalFilter]);
+
   return (
     <>
       <SectionHeader description="Scheduled and completed encounters with clinical context." />
       <DataTable
-        rows={rows}
+        rows={filteredRows}
         keyFor={(row) => row.encounterId}
-        emptyMessage="No appointments have been recorded."
+        emptyMessage="No appointments match the filters."
+        filterSlot={
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-[#8B7469] uppercase tracking-wider font-sans">Status:</span>
+              <select
+                value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value)}
+                className="rounded-xl border border-[#EEDFD7] bg-white px-3 py-1.5 text-xs text-[#3D2010] outline-none focus:border-[#D97757] font-sans"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="SCHEDULED">Scheduled</option>
+                <option value="IN_PROGRESS">In Progress</option>
+                <option value="COMPLETED">Completed</option>
+                <option value="CANCELLED">Cancelled</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-[#8B7469] uppercase tracking-wider font-sans">Hospital:</span>
+              <select
+                value={hospitalFilter}
+                onChange={e => setHospitalFilter(e.target.value)}
+                className="rounded-xl border border-[#EEDFD7] bg-white px-3 py-1.5 text-xs text-[#3D2010] outline-none focus:border-[#D97757] font-sans"
+              >
+                <option value="ALL">All Hospitals</option>
+                {hospitals.map(h => (
+                  <option key={h.hospitalId} value={h.hospitalId}>{h.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        }
         columns={[
           { label: "Patient", render: (row) => <span className="font-semibold text-[#3D2010]">{fullName(row.patient?.user)}</span> },
           { label: "Doctor", render: (row) => fullName(row.doctor?.user) },
-          { label: "Date & time", render: (row) => formatDate(row.scheduledTime, true) },
-          { label: "Visit", render: (row) => row.visitType },
-          { label: "Reason", render: (row) => row.reason || row.chiefComplaint || "General consultation" },
+          { label: "Date & time", render: (row) => <span className="font-mono text-xs font-medium text-gray-700">{formatDate(row.scheduledTime, true)}</span> },
+          { label: "Visit", render: (row) => <span className="font-sans text-xs text-gray-500 font-semibold">{row.visitType}</span> },
+          { label: "Reason", render: (row) => <span className="text-xs text-gray-600 font-sans">{row.reason || row.chiefComplaint || "General consultation"}</span> },
           { label: "Status", render: (row) => <StatusBadge value={row.status} /> },
         ]}
       />
@@ -360,20 +1029,63 @@ function AppointmentsView({ rows }) {
 }
 
 function PatientsView({ rows }) {
+  const [genderFilter, setGenderFilter] = useState("ALL");
+  const [bloodFilter, setBloodFilter] = useState("ALL");
+
+  const filteredRows = React.useMemo(() => {
+    return rows.filter(row => {
+      const matchGender = genderFilter === "ALL" || String(row.gender).toLowerCase() === genderFilter.toLowerCase();
+      const matchBlood = bloodFilter === "ALL" || row.bloodGroup === bloodFilter;
+      return matchGender && matchBlood;
+    });
+  }, [rows, genderFilter, bloodFilter]);
+
+  const bloodGroups = ["O_POSITIVE", "O_NEGATIVE", "A_POSITIVE", "A_NEGATIVE", "B_POSITIVE", "B_NEGATIVE", "AB_POSITIVE", "AB_NEGATIVE"];
+
   return (
     <>
       <SectionHeader description="Patient identities and clinical-history coverage." />
       <DataTable
-        rows={rows}
+        rows={filteredRows}
         keyFor={(row) => row.patientId}
-        emptyMessage="No patients are available in this hospital scope."
+        emptyMessage="No patients match the filters."
+        filterSlot={
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-[#8B7469] uppercase tracking-wider font-sans">Gender:</span>
+              <select
+                value={genderFilter}
+                onChange={e => setGenderFilter(e.target.value)}
+                className="rounded-xl border border-[#EEDFD7] bg-white px-3 py-1.5 text-xs text-[#3D2010] outline-none focus:border-[#D97757] font-sans"
+              >
+                <option value="ALL">All Genders</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-[#8B7469] uppercase tracking-wider font-sans">Blood Group:</span>
+              <select
+                value={bloodFilter}
+                onChange={e => setBloodFilter(e.target.value)}
+                className="rounded-xl border border-[#EEDFD7] bg-white px-3 py-1.5 text-xs text-[#3D2010] outline-none focus:border-[#D97757] font-sans"
+              >
+                <option value="ALL">All Groups</option>
+                {bloodGroups.map(bg => (
+                  <option key={bg} value={bg}>{String(bg).replace("_", " ")}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        }
         columns={[
-          { label: "Patient", render: (row) => <div><p className="font-semibold text-[#3D2010]">{fullName(row.user)}</p><p className="mt-1 text-xs text-[#9C8276]">{row.user?.phoneNumber}</p></div> },
-          { label: "Gender", render: (row) => row.gender ? row.gender[0].toUpperCase() + row.gender.slice(1) : "—" },
-          { label: "Date of birth", render: (row) => formatDate(row.dob) },
-          { label: "Blood group", render: (row) => String(row.bloodGroup || "—").replace("_", " ") },
-          { label: "Conditions", render: (row) => row.chronicConditions?.join(", ") || "None recorded" },
-          { label: "Visits", render: (row) => row._count?.encounters || 0 },
+          { label: "Patient", render: (row) => <div><p className="font-semibold text-[#3D2010]">{fullName(row.user)}</p><p className="mt-1 text-xs text-[#9C8276] font-mono">{row.user?.phoneNumber}</p></div> },
+          { label: "Gender", render: (row) => <span className="text-xs font-sans text-gray-500 font-semibold">{row.gender ? row.gender[0].toUpperCase() + row.gender.slice(1) : "—"}</span> },
+          { label: "Date of birth", render: (row) => <span className="text-xs font-sans">{formatDate(row.dob)}</span> },
+          { label: "Blood group", render: (row) => <span className="text-xs font-sans text-gray-600 font-bold">{String(row.bloodGroup || "—").replace("_", " ")}</span> },
+          { label: "Conditions", render: (row) => <span className="text-xs text-gray-500 font-sans">{row.chronicConditions?.join(", ") || "None recorded"}</span> },
+          { label: "Visits", render: (row) => <span className="font-mono text-xs text-gray-800 font-bold">{row._count?.encounters || 0}</span> },
         ]}
       />
     </>
@@ -465,7 +1177,7 @@ function HospitalSettingsView({ hospitals, selectedId, onSelect, form, onChange,
   return (
     <div className="max-w-3xl">
       <SectionHeader description="Update the operational identity shown throughout the admin workspace." />
-      <form onSubmit={onSave} className="rounded-2xl border border-[#EEDFD7] bg-white p-6 shadow-sm">
+      <form onSubmit={onSave} className="rounded-2xl border border-[#EEDFD7] bg-white p-6 shadow-sm font-sans">
         {hospitals.length > 1 && (
           <div className="mb-5">
             <label className="mb-2 block text-sm font-semibold text-[#554238]">Hospital</label>
@@ -481,12 +1193,12 @@ function HospitalSettingsView({ hospitals, selectedId, onSelect, form, onChange,
             ["state", "State"],
           ].map(([name, label]) => (
             <div key={name}>
-              <label className="mb-2 block text-sm font-semibold text-[#554238]">{label}</label>
+              <label className="mb-2 block text-sm font-semibold text-[#554238] font-sans">{label}</label>
               <input name={name} value={form[name]} onChange={onChange} required={name !== "state"} className="w-full rounded-xl border border-[#E3D4CC] px-4 py-3 text-sm outline-none focus:border-[#D97757] focus:ring-2 focus:ring-[#D97757]/10" />
             </div>
           ))}
           <div className="sm:col-span-2">
-            <label className="mb-2 block text-sm font-semibold text-[#554238]">Address</label>
+            <label className="mb-2 block text-sm font-semibold text-[#554238] font-sans">Address</label>
             <textarea name="address" value={form.address} onChange={onChange} required rows={4} className="w-full resize-none rounded-xl border border-[#E3D4CC] px-4 py-3 text-sm outline-none focus:border-[#D97757] focus:ring-2 focus:ring-[#D97757]/10" />
           </div>
         </div>
@@ -515,6 +1227,48 @@ export default function AdminDashboard() {
   const [activeNav, setActiveNav] = useState("Dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [profileModalMode, setProfileModalMode] = useState("view"); // "view" or "edit"
+  const [editForm, setEditForm] = useState({
+    firstName: "",
+    lastName: "",
+    emergencyContact: "",
+  });
+
+  // IMPORTANT: `data` must be declared before this effect to avoid
+  // `ReferenceError: Cannot access 'data' before initialization`.
+
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSavingSettings(true);
+    const token = localStorage.getItem("adminToken");
+
+    try {
+      const res = await fetch(`${apiBaseUrl}/users/profile/update`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(editForm),
+      });
+
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.message || "Failed to update profile");
+
+      setIsProfileModalOpen(false);
+      
+      // Force reload data
+      loadDashboard(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -650,10 +1404,30 @@ export default function AdminDashboard() {
     if (!data) return null;
     const views = {
       Dashboard: <DashboardOverview data={data} />,
-      Doctors: <DoctorsView rows={data.doctors} />,
-      Receptionists: <ReceptionistsView rows={data.receptionists} />,
-      "Lab Staff": <LabStaffView rows={data.labStaff} />,
-      Appointments: <AppointmentsView rows={data.appointments} />,
+      "Pending Requests": <PendingRequestsView />,
+      Doctors: (
+        <DoctorsView
+          rows={data.doctors}
+          appointments={data.appointments}
+          hospitals={data.hospitals}
+          onRefresh={() => loadDashboard(true)}
+        />
+      ),
+      Receptionists: (
+        <ReceptionistsView
+          rows={data.receptionists}
+          hospitals={data.hospitals}
+          onRefresh={() => loadDashboard(true)}
+        />
+      ),
+      "Lab Staff": (
+        <LabStaffView
+          rows={data.labStaff}
+          hospitals={data.hospitals}
+          onRefresh={() => loadDashboard(true)}
+        />
+      ),
+      Appointments: <AppointmentsView rows={data.appointments} hospitals={data.hospitals} />,
       Patients: <PatientsView rows={data.patients} />,
       "Lab Reports": <LabReportsView rows={data.labResults} />,
       "Financial Reports": <FinancialReportsView rows={data.invoices} overview={data.overview} />,
@@ -732,6 +1506,18 @@ export default function AdminDashboard() {
                     <p className="text-sm font-bold text-[#3D2010]">{adminName}</p>
                   </div>
                   <button
+                    onClick={() => { setIsProfileDropdownOpen(false); setProfileModalMode("view"); setIsProfileModalOpen(true); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    View Profile
+                  </button>
+                  <button
+                    onClick={() => { setIsProfileDropdownOpen(false); setProfileModalMode("edit"); setIsProfileModalOpen(true); }}
+                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
+                  >
+                    Edit Profile
+                  </button>
+                  <button
                     onClick={() => { setIsProfileDropdownOpen(false); alert("Settings config: Theme & notifications preferences are set to auto-detect."); }}
                     className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#D97757] font-medium"
                   >
@@ -783,6 +1569,122 @@ export default function AdminDashboard() {
 
         <button onClick={() => { window.location.href = "mailto:support@vitadata.example?subject=Admin%20dashboard%20support"; }} aria-label="Contact support" className="fixed bottom-5 right-5 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-[#3D2010] text-lg font-bold text-white shadow-lg transition-colors hover:bg-[#D97757]">?</button>
       </div>
+      {isProfileModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-[#F3EAE5] shadow-2xl p-6 sm:p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto relative animate-in zoom-in-95 duration-200">
+            <button 
+              onClick={() => setIsProfileModalOpen(false)}
+              className="absolute right-4 top-4 rounded-full p-1.5 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+
+            <h2 className="text-xl font-bold text-[#3D2010] mb-6 font-sans">
+              {profileModalMode === "view" ? "My Profile" : "Edit Profile"}
+            </h2>
+
+            {profileModalMode === "view" ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-4 pb-4 border-b border-[#F3EAE5]">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-[#F0CDBB] bg-[#FFF1E8] text-2xl font-bold text-[#D97757]">
+                    {adminName.charAt(0)}
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-[#3D2010]">{adminName}</h3>
+                    <p className="text-xs text-[#9C8276] font-medium font-sans">Administrator Account</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2 sm:col-span-1">
+                    <p className="text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-0.5">Email Address</p>
+                    <p className="text-sm font-medium text-[#3D2010] break-all">{data?.profile?.email || "—"}</p>
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <p className="text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-0.5">Phone Number</p>
+                    <p className="text-sm font-medium text-[#3D2010]">{data?.profile?.phoneNumber || "—"}</p>
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <p className="text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-0.5">Emergency Contact</p>
+                    <p className="text-sm font-medium text-[#3D2010]">{data?.profile?.emergencyContact || "—"}</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t border-[#F3EAE5] mt-6">
+                  <button
+                    type="button"
+                    onClick={() => setProfileModalMode("edit")}
+                    className="flex-1 py-2.5 rounded-xl text-white font-bold bg-[#3D2010] hover:bg-[#D97757] transition-colors text-sm font-sans"
+                  >
+                    Edit Profile
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsProfileModalOpen(false)}
+                    className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-bold text-gray-500 hover:bg-gray-50 font-sans"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleUpdateProfile} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-1 font-sans">First Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={editForm.firstName}
+                      onChange={(e) => setEditForm(p => ({ ...p, firstName: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-1 font-sans">Last Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={editForm.lastName}
+                      onChange={(e) => setEditForm(p => ({ ...p, lastName: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-1 font-sans">Emergency Contact</label>
+                  <input
+                    type="text"
+                    value={editForm.emergencyContact}
+                    onChange={(e) => setEditForm(p => ({ ...p, emergencyContact: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t border-[#F3EAE5] mt-6">
+                  <button
+                    type="submit"
+                    className="flex-1 py-2.5 rounded-xl text-white font-bold bg-[#3D2010] hover:bg-[#D97757] transition-colors text-sm font-sans"
+                  >
+                    Save Changes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProfileModalMode("view")}
+                    className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-bold text-gray-500 hover:bg-gray-50 font-sans"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
