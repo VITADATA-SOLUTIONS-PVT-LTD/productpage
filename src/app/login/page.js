@@ -155,6 +155,10 @@ export default function StaffLoginPage() {
                     {/* Google Button */}
                     <button
                         type="button"
+                        onClick={() => {
+                            if (!apiBaseUrl) return;
+                            window.location.href = `${apiBaseUrl}/auth/google`;
+                        }}
                         className="hover-lift w-full bg-white border border-[rgba(255,204,172,0.4)] hover:bg-[rgba(255,204,172,0.1)] text-[#3D2010] font-semibold py-2 sm:py-2.5 rounded-lg transition-colors text-[12px] sm:text-[13px] flex items-center justify-center gap-2 mb-5"
                     >
                         <GoogleIcon />
