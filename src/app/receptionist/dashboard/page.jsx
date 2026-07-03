@@ -312,6 +312,42 @@ export default function ReceptionistDashboard() {
     emergencyContact: "",
   });
 
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
+  
+  // Data States
+  const [profile, setProfile] = useState(null);
+  const [patients, setPatients] = useState([]);
+  const [doctors, setDoctors] = useState([]);
+  const [appointments, setAppointments] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [appointmentFilterDate, setAppointmentFilterDate] = useState(new Date().toISOString().split("T")[0]);
+  
+  // Form States
+  const [patientForm, setPatientForm] = useState({
+    firstName: "",
+    lastName: "",
+    phoneNumber: "",
+    gender: "male",
+    dob: "",
+    bloodGroup: "O_POSITIVE",
+    chronicConditions: "",
+  });
+
+  const [bookingForm, setBookingForm] = useState({
+    patientId: "",
+    doctorId: "",
+    visitType: "OPD",
+    reason: "",
+  });
+  const [bookingDate, setBookingDate] = useState("");
+  const [bookingSlot, setBookingSlot] = useState("");
+  const [slots, setSlots] = useState([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+
+
   useEffect(() => {
     if (profile) {
       setEditForm({
@@ -355,40 +391,6 @@ export default function ReceptionistDashboard() {
       setSubmitting(false);
     }
   };
-
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
-  
-  // Data States
-  const [profile, setProfile] = useState(null);
-  const [patients, setPatients] = useState([]);
-  const [doctors, setDoctors] = useState([]);
-  const [appointments, setAppointments] = useState([]);
-  const [submitting, setSubmitting] = useState(false);
-  const [appointmentFilterDate, setAppointmentFilterDate] = useState(new Date().toISOString().split("T")[0]);
-  
-  // Form States
-  const [patientForm, setPatientForm] = useState({
-    firstName: "",
-    lastName: "",
-    phoneNumber: "",
-    gender: "male",
-    dob: "",
-    bloodGroup: "O_POSITIVE",
-    chronicConditions: "",
-  });
-
-  const [bookingForm, setBookingForm] = useState({
-    patientId: "",
-    doctorId: "",
-    visitType: "OPD",
-    reason: "",
-  });
-  const [bookingDate, setBookingDate] = useState("");
-  const [bookingSlot, setBookingSlot] = useState("");
-  const [slots, setSlots] = useState([]);
-  const [loadingSlots, setLoadingSlots] = useState(false);
 
   const receptionistEvents = useMemo(() => {
     return appointments.map(a => ({

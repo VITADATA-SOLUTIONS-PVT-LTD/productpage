@@ -1,5 +1,12 @@
 "use client";
 
+// NOTE: This page previously triggered prerender init-order crashes
+// (`ReferenceError: Cannot access 'L' before initialization`).
+// To guarantee stability, disable static prerendering for this route.
+export const dynamic = "force-dynamic";
+
+
+
 import React from "react";
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -21,19 +28,29 @@ const apiBaseUrl =
 const CACHE_EXPIRY_MS = 15 * 60 * 1000;
 
 function getCachedItem(key) {
+  // Avoid shadowing the outer `data` variable name used elsewhere in this file.
+  // Shadowing can lead to hard-to-diagnose bundler/transpiler init order issues.
   try {
-    const cached = localStorage.getItem(key);
-    if (!cached) return null;
-    const { data, timestamp } = JSON.parse(cached);
+    if (typeof window === "undefined") return null;
+    const cachedRaw = localStorage.getItem(key);
+    if (!cachedRaw) return null;
+    const parsed = JSON.parse(cachedRaw);
+    const cachedValue = parsed?.data;
+    const timestamp = parsed?.timestamp;
+
+    if (!timestamp || !cachedValue) return cachedValue ?? null;
+
     if (Date.now() - timestamp > CACHE_EXPIRY_MS) {
       localStorage.removeItem(key);
       return null;
     }
-    return data;
+
+    return cachedValue;
   } catch {
     return null;
   }
 }
+
 
 function setCachedItem(key, data) {
   try {
@@ -235,49 +252,6 @@ export default function LabStaffDashboard() {
     emergencyContact: "",
   });
 
-  useEffect(() => {
-    if (profile) {
-      setEditForm({
-        firstName: profile.firstName || "",
-        lastName: profile.lastName || "",
-        emergencyContact: profile.emergencyContact || "",
-      });
-    }
-  }, [profile, isProfileModalOpen]);
-
-  const handleUpdateProfile = async (e) => {
-    e.preventDefault();
-    setError("");
-    setSuccessMsg("");
-    setSubmitting(true);
-    const token = localStorage.getItem("labStaffToken");
-
-    try {
-      const res = await fetch(`${apiBaseUrl}/users/profile/update`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(editForm),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Failed to update profile");
-
-      setSuccessMsg("Profile updated successfully!");
-      setIsProfileModalOpen(false);
-      
-      // Force reload data
-      localStorage.removeItem("lab_cached_profile");
-      loadData();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
@@ -302,6 +276,53 @@ export default function LabStaffDashboard() {
     unit: "",
     normalRange: "",
   });
+
+
+  useEffect(() => {
+    // Prevent init-order crashes during SSR/prerender.
+    if (!profile) return;
+    setEditForm({
+      firstName: profile.firstName || "",
+      lastName: profile.lastName || "",
+      emergencyContact: profile.emergencyContact || "",
+    });
+  }, [profile, isProfileModalOpen]);
+
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccessMsg("");
+    setSubmitting(true);
+    const token = localStorage.getItem("labStaffToken");
+
+    try {
+      const res = await fetch(`${apiBaseUrl}/users/profile/update`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(editForm),
+      });
+
+      const apiResponse = await res.json();
+      if (!res.ok) throw new Error(apiResponse.message || "Failed to update profile");
+
+
+      setSuccessMsg("Profile updated successfully!");
+      setIsProfileModalOpen(false);
+      
+      // Force reload data
+      localStorage.removeItem("lab_cached_profile");
+      loadData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
 
   const labEvents = useMemo(() => {
     const scheduledEvents = encounters.map(e => ({
@@ -456,11 +477,12 @@ export default function LabStaffDashboard() {
         body: JSON.stringify(resultForm),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Failed to submit result");
+      const apiResponse = await res.json();
+      if (!res.ok) throw new Error(apiResponse.message || "Failed to submit result");
+
 
       // OPTIMISTIC LOCAL STATE UPDATE
-      const newResult = data.data;
+      const newResult = apiResponse.data;
       if (newResult) {
         // Enforce basic relations from selected state
         const selectedEnc = encounters.find(e => e.encounterId === resultForm.encounterId);
@@ -502,11 +524,12 @@ export default function LabStaffDashboard() {
         body: JSON.stringify(testForm),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Failed to add test to catalog");
+      const apiResponse = await res.json();
+      if (!res.ok) throw new Error(apiResponse.message || "Failed to add test to catalog");
+
 
       // OPTIMISTIC LOCAL STATE UPDATE
-      const newTest = data.data;
+      const newTest = apiResponse.data;
       if (newTest) {
         setLabTests(prev => {
           const next = [newTest, ...prev];
