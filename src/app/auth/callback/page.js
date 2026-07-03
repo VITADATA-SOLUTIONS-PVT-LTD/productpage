@@ -53,8 +53,9 @@ function CallbackHandler() {
     } catch (err) {
       console.error('OAuth callback processing error:', err);
       setError(err?.message || 'Failed to process login');
+      const redirectPath = searchParams.get('state') || '/login';
       setTimeout(() => {
-        router.replace('/login');
+        router.replace(redirectPath);
       }, 3000);
     }
   }, [searchParams, router]);

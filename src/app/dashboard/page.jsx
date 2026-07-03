@@ -1232,6 +1232,7 @@ export default function AdminDashboard() {
   const [editForm, setEditForm] = useState({
     firstName: "",
     lastName: "",
+    phoneNumber: "",
     emergencyContact: "",
   });
 
@@ -1270,6 +1271,17 @@ export default function AdminDashboard() {
   };
 
   const [data, setData] = useState(null);
+
+  useEffect(() => {
+    if (data?.profile) {
+      setEditForm({
+        firstName: data.profile.firstName || "",
+        lastName: data.profile.lastName || "",
+        phoneNumber: data.profile.phoneNumber || "",
+        emergencyContact: data.profile.emergencyContact || "",
+      });
+    }
+  }, [data, isProfileModalOpen]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -1655,14 +1667,26 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-1 font-sans">Emergency Contact</label>
-                  <input
-                    type="text"
-                    value={editForm.emergencyContact}
-                    onChange={(e) => setEditForm(p => ({ ...p, emergencyContact: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-1 font-sans">Phone Number</label>
+                    <input
+                      type="text"
+                      required
+                      value={editForm.phoneNumber}
+                      onChange={(e) => setEditForm(p => ({ ...p, phoneNumber: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-1 font-sans">Emergency Contact</label>
+                    <input
+                      type="text"
+                      value={editForm.emergencyContact}
+                      onChange={(e) => setEditForm(p => ({ ...p, emergencyContact: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+                    />
+                  </div>
                 </div>
 
                 <div className="flex gap-3 pt-4 border-t border-[#F3EAE5] mt-6">

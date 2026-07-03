@@ -28,6 +28,82 @@ export default function DoctorLoginPage() {
     const [error, setError] = useState("");
     const router = useRouter();
 
+    const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
+    const [forgotTarget, setForgotTarget] = useState('');
+    const [forgotOtp, setForgotOtp] = useState('');
+    const [forgotNewPassword, setForgotNewPassword] = useState('');
+    const [forgotStep, setForgotStep] = useState(1); // 1 = input phone/email, 2 = input otp and new password
+    const [forgotError, setForgotError] = useState('');
+    const [forgotSuccess, setForgotSuccess] = useState('');
+    const [forgotLoading, setForgotLoading] = useState(false);
+
+    const handleRequestReset = async (e) => {
+        e.preventDefault();
+        setForgotError('');
+        setForgotSuccess('');
+        setForgotLoading(true);
+
+        try {
+            const isEmail = forgotTarget.includes('@');
+            const payload = isEmail ? { email: forgotTarget } : { phoneNumber: forgotTarget };
+
+            const res = await fetch(`${apiBaseUrl}/auth/forgot-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to send reset code');
+
+            setForgotSuccess(data.message + (data.devOtp ? ` (DEV OTP: ${data.devOtp})` : ''));
+            setForgotStep(2);
+        } catch (err) {
+            setForgotError(err.message);
+        } finally {
+            setForgotLoading(false);
+        }
+    };
+
+    const handleResetPassword = async (e) => {
+        e.preventDefault();
+        setForgotError('');
+        setForgotSuccess('');
+        setForgotLoading(true);
+
+        try {
+            const isEmail = forgotTarget.includes('@');
+            const payload = {
+                otp: forgotOtp,
+                newPassword: forgotNewPassword,
+                ...(isEmail ? { email: forgotTarget } : { phoneNumber: forgotTarget }),
+            };
+
+            const res = await fetch(`${apiBaseUrl}/auth/reset-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to reset password');
+
+            setForgotSuccess('Password reset successfully! You can now sign in.');
+            setTimeout(() => {
+                setIsForgotModalOpen(false);
+                setForgotTarget('');
+                setForgotOtp('');
+                setForgotNewPassword('');
+                setForgotStep(1);
+                setForgotSuccess('');
+            }, 3000);
+        } catch (err) {
+            setForgotError(err.message);
+        } finally {
+            setForgotLoading(false);
+        }
+    };
+
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const err = params.get('error');
@@ -132,9 +208,13 @@ export default function DoctorLoginPage() {
                             <input type="checkbox" className="w-3.5 h-3.5 rounded border-[#FFCCAC] text-[#D97757] focus:ring-[#D97757]" />
                             <span className="text-[#3D2010] text-[12px] sm:text-[13px] font-medium">Remember me</span>
                         </label>
-                        <a href="#" className="text-[#D97757] text-[12px] sm:text-[13px] hover:underline hover:text-[#9B6B5A]">
+                        <button
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); setIsForgotModalOpen(true); }}
+                            className="text-[#D97757] text-[12px] sm:text-[13px] hover:underline hover:text-[#9B6B5A]"
+                        >
                             Forgot password?
-                        </a>
+                        </button>
                     </div>
 
                     <button
@@ -186,6 +266,107 @@ export default function DoctorLoginPage() {
                     </svg>
                     Back to Home
             </Link>
+            {isForgotModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div className="bg-white rounded-3xl border border-[#F3EAE5] shadow-2xl p-6 sm:p-8 max-w-sm w-full relative animate-in zoom-in-95 duration-200 text-left">
+                        <button 
+                            type="button"
+                            onClick={() => {
+                                setIsForgotModalOpen(false);
+                                setForgotTarget('');
+                                setForgotOtp('');
+                                setForgotNewPassword('');
+                                setForgotStep(1);
+                                setForgotError('');
+                                setForgotSuccess('');
+                            }}
+                            className="absolute right-4 top-4 rounded-full p-1.5 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors"
+                        >
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18" />
+                                <line x1="6" y1="6" x2="18" y2="18" />
+                            </svg>
+                        </button>
+
+                        <h2 className="text-lg font-bold text-[#3D2010] mb-2 font-sans">
+                            Forgot Password
+                        </h2>
+                        <p className="text-xs text-gray-500 mb-4">
+                            {forgotStep === 1 
+                                ? 'Enter your registered phone number or email to receive a verification code.' 
+                                : 'Enter the code sent to your account and choose a new password.'
+                            }
+                        </p>
+
+                        {forgotError && (
+                            <div className="w-full mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
+                                {forgotError}
+                            </div>
+                        )}
+                        {forgotSuccess && (
+                            <div className="w-full mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-700">
+                                {forgotSuccess}
+                            </div>
+                        )}
+
+                        {forgotStep === 1 ? (
+                            <form onSubmit={handleRequestReset} className="space-y-4">
+                                <div>
+                                    <label className="block text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-1 font-sans">Email or Phone Number</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="e.g. +919900000301 or mail@example.com"
+                                        value={forgotTarget}
+                                        onChange={(e) => setForgotTarget(e.target.value)}
+                                        className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+                                    />
+                                </div>
+                                <button
+                                    type="submit"
+                                    disabled={forgotLoading}
+                                    className="w-full py-2.5 rounded-xl text-white font-bold bg-[#3D2010] hover:bg-[#D97757] transition-colors text-sm font-sans disabled:opacity-50"
+                                >
+                                    {forgotLoading ? 'Sending...' : 'Send Verification Code'}
+                                </button>
+                            </form>
+                        ) : (
+                            <form onSubmit={handleResetPassword} className="space-y-4">
+                                <div>
+                                    <label className="block text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-1 font-sans">Verification Code (OTP)</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        maxLength={6}
+                                        placeholder="Enter 6-digit code"
+                                        value={forgotOtp}
+                                        onChange={(e) => setForgotOtp(e.target.value)}
+                                        className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[11px] font-bold text-[#8B7469] uppercase tracking-wider mb-1 font-sans">New Password</label>
+                                    <input
+                                        type="password"
+                                        required
+                                        placeholder="Enter new password"
+                                        value={forgotNewPassword}
+                                        onChange={(e) => setForgotNewPassword(e.target.value)}
+                                        className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-[#3D2010] outline-none focus:border-[#D97757]"
+                                    />
+                                </div>
+                                <button
+                                    type="submit"
+                                    disabled={forgotLoading}
+                                    className="w-full py-2.5 rounded-xl text-white font-bold bg-[#3D2010] hover:bg-[#D97757] transition-colors text-sm font-sans disabled:opacity-50"
+                                >
+                                    {forgotLoading ? 'Resetting...' : 'Reset Password'}
+                                </button>
+                            </form>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
