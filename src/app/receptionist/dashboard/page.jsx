@@ -2,7 +2,7 @@
 
 import React from "react";
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import DashboardCalendar from "@/components/DashboardCalendar";
 
@@ -302,29 +302,10 @@ export default function ReceptionistDashboard() {
   const router = useRouter();
   const [activeNav, setActiveNav] = useState("Dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [badges, setBadges] = useState({});
+  const [notifications, setNotifications] = useState([]);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
 
-  useEffect(() => {
-    const initialBadges = {};
-    if (navItems.includes("Pending Requests")) initialBadges["Pending Requests"] = 2;
-    if (navItems.includes("Appointments")) initialBadges["Appointments"] = 1;
-    if (navItems.includes("Appointments Queue")) initialBadges["Appointments Queue"] = 2;
-    if (navItems.includes("Submit Lab Result")) initialBadges["Submit Lab Result"] = 1;
-    if (navItems.includes("Medical Records")) initialBadges["Medical Records"] = 1;
-    setBadges(initialBadges);
 
-    const interval = setInterval(() => {
-      const potentialTabs = navItems.filter(item => item !== "Dashboard" && item !== "Hospital Settings" && item !== "Lab Test Catalog");
-      if (potentialTabs.length === 0) return;
-      const randomTab = potentialTabs[Math.floor(Math.random() * potentialTabs.length)];
-      setBadges(prev => ({
-        ...prev,
-        [randomTab]: (prev[randomTab] || 0) + 1
-      }));
-    }, 25000);
-
-    return () => clearInterval(interval);
-  }, []);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [profileModalMode, setProfileModalMode] = useState("view"); // "view" or "edit"
@@ -381,6 +362,48 @@ export default function ReceptionistDashboard() {
     dob: "",
   });
   const [selectedSpecialty, setSelectedSpecialty] = useState("");
+
+  const fetchNotifications = useCallback(async () => {
+    const token = localStorage.getItem("receptionistToken");
+    if (!token) return;
+    try {
+      const res = await fetch(`${apiBaseUrl}/notifications`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const list = await res.json();
+        setNotifications(Array.isArray(list) ? list : []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
+
+  const markAsRead = async (id) => {
+    const token = localStorage.getItem("receptionistToken");
+    if (!token) return;
+    try {
+      const res = await fetch(`${apiBaseUrl}/notifications/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ isRead: true })
+      });
+      if (res.ok) {
+        setNotifications(prev => prev.map(n => n.notificationId === id ? { ...n, isRead: true } : n));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const unreadCount = notifications.filter(n => !n.isRead).length;
 
   const [selectedPatientForPrescriptions, setSelectedPatientForPrescriptions] = useState(null);
   const [patientPrescriptions, setPatientPrescriptions] = useState([]);
@@ -486,45 +509,55 @@ export default function ReceptionistDashboard() {
 
       const hospitalId = currentProfile?.receptionist?.hospitalId;
 
-      // 2. Load Doctors (cached)
-      const cachedDoctors = getCachedItem("receptionist_cached_doctors");
-      let currentDoctors = cachedDoctors || [];
-      if (!cachedDoctors) {
-        const doctorsRes = await fetch(`${apiBaseUrl}/doctors${hospitalId ? `?hospitalId=${hospitalId}` : ""}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (doctorsRes.ok) {
-          const doctorsData = await doctorsRes.json();
-          currentDoctors = Array.isArray(doctorsData) ? doctorsData : [];
-          setCachedItem("receptionist_cached_doctors", currentDoctors);
-        }
-      }
-      setDoctors(currentDoctors);
+      // Load the rest of the data in parallel
+      await Promise.all([
+        (async () => {
+          // 2. Load Doctors (cached)
+          const cachedDoctors = getCachedItem("receptionist_cached_doctors");
+          let currentDoctors = cachedDoctors || [];
+          if (!cachedDoctors) {
+            const doctorsRes = await fetch(`${apiBaseUrl}/doctors${hospitalId ? `?hospitalId=${hospitalId}` : ""}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (doctorsRes.ok) {
+              const doctorsData = await doctorsRes.json();
+              currentDoctors = Array.isArray(doctorsData) ? doctorsData : [];
+              setCachedItem("receptionist_cached_doctors", currentDoctors);
+            }
+          }
+          setDoctors(currentDoctors);
+        })(),
 
-      // 3. Load Patients (dynamic)
-      const patientsRes = await fetch(`${apiBaseUrl}/patients${hospitalId ? `?hospitalId=${hospitalId}` : ""}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (patientsRes.ok) {
-        const patientsData = await patientsRes.json();
-        setPatients(Array.isArray(patientsData) ? patientsData : []);
-      }
+        (async () => {
+          // 3. Load Patients (dynamic)
+          const patientsRes = await fetch(`${apiBaseUrl}/patients${hospitalId ? `?hospitalId=${hospitalId}` : ""}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (patientsRes.ok) {
+            const patientsData = await patientsRes.json();
+            setPatients(Array.isArray(patientsData) ? patientsData : []);
+          }
+        })(),
 
-      // 4. Load Appointments (dynamic)
-      const appointmentsRes = await fetch(`${apiBaseUrl}/encounters${hospitalId ? `?hospitalId=${hospitalId}` : ""}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (appointmentsRes.ok) {
-        const appointmentsData = await appointmentsRes.json();
-        setAppointments(Array.isArray(appointmentsData) ? appointmentsData : []);
-      }
+        (async () => {
+          // 4. Load Appointments (dynamic)
+          const appointmentsRes = await fetch(`${apiBaseUrl}/encounters${hospitalId ? `?hospitalId=${hospitalId}` : ""}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (appointmentsRes.ok) {
+            const appointmentsData = await appointmentsRes.json();
+            setAppointments(Array.isArray(appointmentsData) ? appointmentsData : []);
+          }
+        })(),
 
+        fetchNotifications()
+      ]);
     } catch (requestError) {
       setError(requestError.message || "Unable to connect to the VitaData API");
     } finally {
       setLoading(false);
     }
-  }, [logout]);
+  }, [logout, fetchNotifications]);
 
   useEffect(() => {
     loadData();
@@ -685,71 +718,330 @@ export default function ReceptionistDashboard() {
     const doctorName = doctorUser ? fullName(doctorUser) : "Clinician";
     const doctorSpecialization = prescription.encounter?.doctor?.specialization || prescription.doctor?.specialization || "General Medicine";
 
-    const diagnosis = prescription.encounter?.diagnosis || prescription.diagnosis || "Consultation Checkup";
-
     const medicines = prescription.prescriptionMedicines || prescription.medicines || [];
+    const doctorObj = prescription.encounter?.doctor || prescription.doctor;
+    const signatureUrl = doctorObj?.signatureUrl || "";
+    const hospitalName = prescription.encounter?.hospital?.name || doctorObj?.hospitals?.[0]?.hospital?.name || "VitaData Hospital";
+    const vitals = prescription.encounter?.vitals || [];
+    const labResults = prescription.encounter?.labResults || [];
+    const notes = prescription.encounter?.notes || "";
+
+    const diagnosesList = prescription.encounter?.diagnoses || [];
+    const diagnosisSummaryText = diagnosesList.length > 0
+      ? diagnosesList.map(d => d.diagnosisText).filter(Boolean).join(", ")
+      : (prescription.encounter?.diagnosis || prescription.diagnosis || prescription.encounter?.reason || "—");
+
+    const symptomsText = diagnosesList.length > 0
+      ? diagnosesList.map(d => d.symptoms).filter(Boolean).join("; ")
+      : (prescription.encounter?.chiefComplaint || prescription.encounter?.reason || "—");
 
     const html = `
       <html>
       <head>
         <title>Prescription - ${patientName}</title>
         <style>
-          body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 40px; color: #3D2010; }
-          .header { display: flex; justify-content: space-between; border-bottom: 2px solid #3D2010; padding-bottom: 20px; margin-bottom: 30px; }
-          .logo { font-size: 24px; font-weight: bold; color: #D97757; }
-          .doc-info { text-align: right; }
-          .section { margin-bottom: 25px; }
-          .section-title { font-size: 16px; font-weight: bold; color: #3D2010; border-bottom: 1px solid #EEDFD7; padding-bottom: 5px; margin-bottom: 10px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-          th { border-bottom: 2px solid #EEDFD7; text-align: left; padding: 8px; font-size: 14px; color: #6B554A; }
-          td { padding: 10px 8px; border-bottom: 1px solid #F3EAE5; font-size: 13px; }
-          .footer { margin-top: 50px; text-align: center; font-size: 11px; color: #9C8276; border-top: 1px solid #EEDFD7; padding-top: 15px; }
+          @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+          
+          body { 
+            font-family: 'Outfit', 'Helvetica Neue', Arial, sans-serif; 
+            padding: 50px; 
+            color: #3D2010; 
+            background-color: #ffffff;
+            line-height: 1.6;
+          }
+          
+          .header-container { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            border-bottom: 2px solid #EEDFD7; 
+            padding-bottom: 30px; 
+            margin-bottom: 40px; 
+          }
+          
+          .brand-section {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+          }
+          
+          .logo-img {
+            height: 55px;
+            width: auto;
+            object-fit: contain;
+          }
+          
+          .brand-details h1 {
+            font-size: 24px;
+            font-weight: 800;
+            color: #D97757;
+            margin: 0;
+            letter-spacing: -0.02em;
+          }
+          
+          .brand-details p {
+            margin: 3px 0 0 0;
+            font-size: 13px;
+            color: #8B7469;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+          }
+          
+          .clinic-info { 
+            text-align: right; 
+          }
+          
+          .clinic-info h3 { 
+            margin: 0; 
+            font-size: 18px; 
+            font-weight: 700;
+            color: #3D2010;
+          }
+          
+          .clinic-info .specialty { 
+            margin: 4px 0 0 0; 
+            font-size: 13px; 
+            color: #D97757; 
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+          }
+          
+          .clinic-info .hospital {
+            margin: 4px 0 0 0;
+            font-size: 13px;
+            color: #8B7469;
+            font-weight: 400;
+          }
+
+          .info-grid {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            gap: 40px;
+            margin-bottom: 40px;
+            background-color: #FFFDFB;
+            border: 1px solid #F2D7C8;
+            border-radius: 16px;
+            padding: 24px;
+          }
+          
+          .info-block p {
+            margin: 8px 0;
+            font-size: 14px;
+            color: #554238;
+          }
+          
+          .info-block strong {
+            color: #3D2010;
+            font-weight: 600;
+          }
+          
+          .section { 
+            margin-bottom: 35px; 
+          }
+          
+          .section-title { 
+            font-size: 15px; 
+            font-weight: 700; 
+            color: #D97757; 
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            border-bottom: 1.5px solid #F2D7C8; 
+            padding-bottom: 8px; 
+            margin-bottom: 16px; 
+          }
+
+          .vitals-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 10px;
+          }
+
+          .vital-card {
+            background-color: #FFF5F0;
+            border: 1px solid #FBE5D8;
+            border-radius: 10px;
+            padding: 8px 16px;
+            font-size: 13px;
+            color: #3D2010;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          }
+
+          .vital-card strong {
+            color: #D97757;
+          }
+
+          .meds-table { 
+            width: 100%; 
+            border-collapse: separate; 
+            border-spacing: 0;
+            margin-top: 15px; 
+            border: 1px solid #EEDFD7;
+            border-radius: 12px;
+            overflow: hidden;
+          }
+          
+          .meds-table th { 
+            background-color: #FFF9F5;
+            border-bottom: 1.5px solid #EEDFD7; 
+            text-align: left; 
+            padding: 14px 18px; 
+            font-size: 13px; 
+            font-weight: 700;
+            color: #806B61; 
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+          }
+          
+          .meds-table td { 
+            padding: 16px 18px; 
+            border-bottom: 1px solid #F3EAE5; 
+            font-size: 14px; 
+            color: #3D2010;
+          }
+          
+          .meds-table tr:last-child td {
+            border-bottom: none;
+          }
+          
+          .med-name {
+            font-weight: 700;
+            color: #3D2010;
+          }
+
+          .sig-section {
+            margin-top: 60px;
+            display: flex;
+            justify-content: flex-end;
+          }
+
+          .sig-box {
+            text-align: center;
+            width: 200px;
+          }
+
+          .sig-image {
+            max-height: 70px;
+            width: auto;
+            margin-bottom: 8px;
+          }
+
+          .sig-line {
+            border-top: 1px solid #8B7469;
+            padding-top: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #554238;
+          }
+          
+          .footer { 
+            margin-top: 80px; 
+            text-align: center; 
+            font-size: 11px; 
+            color: #9C8276; 
+            border-top: 1px solid #EEDFD7; 
+            padding-top: 20px; 
+          }
         </style>
       </head>
       <body>
-        <div class="header">
-          <div>
-            <div class="logo">VitaData Healthcare</div>
-            <p style="margin: 5px 0 0 0; font-size: 13px; color: #6B554A;">Patient Medical Record</p>
+        <div class="header-container">
+          <div class="brand-section">
+            <img src="${window.location.origin}/logo.png" class="logo-img" alt="VitaData Logo" onerror="this.style.display='none'" />
+            <div class="brand-details">
+              <h1>VitaData Healthcare</h1>
+              <p>Patient Medical Record</p>
+            </div>
           </div>
-          <div class="doc-info">
-            <h3 style="margin: 0;">Dr. ${doctorName}</h3>
-            <p style="margin: 5px 0 0 0; font-size: 12px; color: #6B554A;">${doctorSpecialization}</p>
-          </div>
-        </div>
-        <div class="section" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-          <div>
-            <strong>Patient Name:</strong> ${patientName}<br>
-            <strong>Date of Birth:</strong> ${dob}<br>
-            <strong>Gender:</strong> ${gender}
-          </div>
-          <div style="text-align: right;">
-            <strong>Prescription ID:</strong> ${prescription.prescriptionId || "—"}<br>
-            <strong>Date Issued:</strong> ${formatDate(prescription.createdAt)}<br>
-            <strong>Next Follow-up:</strong> ${formatDate(prescription.encounter?.followUpDate)}
+          <div class="clinic-info">
+            <h3>Dr. ${doctorName}</h3>
+            <div class="specialty">${doctorSpecialization}</div>
+            <div class="hospital">${hospitalName}</div>
           </div>
         </div>
+
+        <div class="info-grid">
+          <div class="info-block">
+            <p><strong>Patient Name:</strong> ${patientName}</p>
+            <p><strong>Date of Birth:</strong> ${dob}</p>
+            <p><strong>Gender:</strong> <span style="text-transform: capitalize;">${gender}</span></p>
+          </div>
+          <div class="info-block" style="text-align: right;">
+            <p><strong>Prescription ID:</strong> <span style="font-family: monospace; font-size: 12px;">${prescription.prescriptionId || "—"}</span></p>
+            <p><strong>Date Issued:</strong> ${formatDate(prescription.createdAt)}</p>
+            <p><strong>Next Follow-up:</strong> ${formatDate(prescription.encounter?.followUpDate)}</p>
+          </div>
+        </div>
+
+        <!-- Vitals Section -->
+        ${vitals.length > 0 ? `
+          <div class="section">
+            <div class="section-title">Recorded Vitals</div>
+            <div class="vitals-grid">
+              ${vitals.map(v => `
+                <div class="vital-card">
+                  <strong>${v.name || v.vitalType?.name || "Vital"}:</strong>
+                  <span>${v.value} ${v.unit || v.vitalType?.unit || ""}</span>
+                </div>
+              `).join("")}
+            </div>
+          </div>
+        ` : ""}
+        
+        <!-- Suggested Lab Tests -->
+        ${labResults.length > 0 ? `
+          <div class="section">
+            <div class="section-title">Suggested Lab Tests</div>
+            <table class="meds-table">
+              <thead>
+                <tr>
+                  <th style="width:40%;">Test Name</th>
+                  <th style="width:20%;">Status</th>
+                  <th style="width:40%;">Pre-test Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${labResults.map(r => `
+                  <tr>
+                    <td><span class="med-name">${r.testName || r.labTest?.testName || "Lab Test"}</span></td>
+                    <td>${r.resultValue != null ? r.resultValue : "<em style='color:#9C8276;'>Pending</em>"}</td>
+                    <td>${r.remarks || "—"}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        ` : ""}
         
         <div class="section">
-          <div class="section-title">Clinical Indication</div>
-          <p><strong>Chief Symptoms / Diagnosis Summary:</strong> ${diagnosis}</p>
+          <div class="section-title">Clinical Indication & Diagnosis</div>
+          <p style="font-size: 14.5px; color: #554238;">
+            <strong>Symptoms / chief complaint:</strong> ${symptomsText}<br>
+            <span style="display: block; margin-top: 8px;">
+              <strong>Diagnosis Summary:</strong> ${diagnosisSummaryText}
+            </span>
+          </p>
         </div>
 
         <div class="section">
           <div class="section-title">Prescribed Medications</div>
-          <table>
+          <table class="meds-table">
             <thead>
               <tr>
-                <th>Medicine</th>
-                <th>Dosage</th>
-                <th>Intake Frequency</th>
-                <th>Duration</th>
+                <th style="width: 40%;">Medicine</th>
+                <th style="width: 15%;">Dosage</th>
+                <th style="width: 30%;">Intake Frequency</th>
+                <th style="width: 15%;">Duration</th>
               </tr>
             </thead>
             <tbody>
               ${medicines.map(m => `
                 <tr>
-                  <td><strong>${m.medicine?.name || m.name || "Medicine"}</strong></td>
+                  <td><span class="med-name">${m.medicine?.name || m.name || "Medicine"}</span></td>
                   <td>${m.dosage || "—"}</td>
                   <td>${m.frequency || "—"}</td>
                   <td>${m.durationDays || "—"} days</td>
@@ -758,12 +1050,36 @@ export default function ReceptionistDashboard() {
             </tbody>
           </table>
         </div>
+
+        <!-- Clinical Advice / Notes -->
+        ${notes ? `
+          <div class="section">
+            <div class="section-title">Advice & Clinical Notes</div>
+            <p style="font-size: 14px; color: #554238; white-space: pre-wrap; background-color: #FAFAFA; padding: 16px; border-radius: 12px; border: 1px solid #EEDFD7;">${notes}</p>
+          </div>
+        ` : ""}
+
+        <!-- Doctor Signature -->
+        <div class="sig-section">
+          <div class="sig-box">
+            ${signatureUrl ? `
+              <img src="${signatureUrl}" class="sig-image" alt="Doctor Signature" />
+            ` : `
+              <div style="height: 50px;"></div>
+            `}
+            <div class="sig-line">Dr. ${doctorName}</div>
+            <div style="font-size: 11px; color: #8B7469; margin-top: 2px;">Authorized Signatory</div>
+          </div>
+        </div>
         
         <div class="footer">
           <p>This is a digitally generated medical prescription card from VitaData Solutions.</p>
         </div>
         <script>
-          window.onload = function() { window.print(); }
+          window.onload = function() {
+            window.print();
+            setTimeout(function() { window.close(); }, 1000);
+          }
         </script>
       </body>
       </html>
@@ -955,28 +1271,48 @@ export default function ReceptionistDashboard() {
     setSubmitting(true);
 
     // OPTIMISTIC LOCAL UPDATE
-    const previousAppointments = JSON.parse(JSON.stringify(appointments));
     setAppointments(prev => prev.map(a => 
       a.encounterId === encounterId ? { ...a, status: newStatus } : a
     ));
 
     try {
-      const res = await fetch(`${apiBaseUrl}/encounters/${encounterId}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ status: newStatus }),
-      });
+      let res;
+      if (newStatus === "CANCELLED") {
+        const confirmCancel = window.confirm("Are you sure you want to cancel this appointment?");
+        if (!confirmCancel) {
+          loadData();
+          setSubmitting(false);
+          return;
+        }
+        res = await fetch(`${apiBaseUrl}/encounters/${encounterId}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          }
+        });
+      } else {
+        res = await fetch(`${apiBaseUrl}/encounters/${encounterId}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ status: newStatus }),
+        });
+      }
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Failed to update status");
-
-      setSuccessMsg(`Appointment status updated to ${newStatus}`);
+      if (newStatus !== "CANCELLED") {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Failed to update status");
+        setSuccessMsg(`Appointment status updated to ${newStatus}`);
+      } else {
+        if (!res.ok) throw new Error("Failed to cancel appointment");
+        setSuccessMsg("Appointment cancelled successfully");
+      }
+      await loadData();
     } catch (err) {
-      setAppointments(previousAppointments); // revert state
       setError(err.message);
+      await loadData();
     } finally {
       setSubmitting(false);
     }
@@ -1511,15 +1847,10 @@ export default function ReceptionistDashboard() {
             {navItems.map((item) => (
               <li key={item}>
                 <button
-                  onClick={() => { setActiveNav(item); setBadges((prev) => ({ ...prev, [item]: 0 })); setIsSidebarOpen(false); setSuccessMsg(""); }}
-                  className={`w-full rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-colors flex justify-between items-center ${activeNav === item ? "bg-[#FFF1E8] text-[#D97757]" : "text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#3D2010]"}`}
+                  onClick={() => { setActiveNav(item); setIsSidebarOpen(false); setSuccessMsg(""); }}
+                  className={`w-full rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-colors ${activeNav === item ? "bg-[#FFF1E8] text-[#D97757]" : "text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#3D2010]"}`}
                 >
-                  <span>{item}</span>
-                  {badges[item] > 0 && (
-                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#D97757] px-1.5 text-[10px] font-extrabold text-white leading-none">
-                      {badges[item]}
-                    </span>
-                  )}
+                  {item}
                 </button>
               </li>
             ))}
@@ -1544,6 +1875,80 @@ export default function ReceptionistDashboard() {
             <p className="text-sm font-bold text-[#3D2010]">{hospitalName}</p>
           </div>
           <div className="relative flex items-center gap-3">
+            {/* Notification Bell */}
+            <div className="relative">
+              <button 
+                onClick={() => setIsNotificationOpen(!isNotificationOpen)}
+                className="relative rounded-full p-2 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors focus:outline-none"
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                </svg>
+                {unreadCount > 0 && (
+                  <span className="absolute right-1.5 top-1.5 flex h-2.5 w-2.5 rounded-full bg-[#D97757] ring-2 ring-white animate-pulse" />
+                )}
+              </button>
+
+              {isNotificationOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsNotificationOpen(false)} />
+                  <div className="absolute right-0 top-12 z-50 w-80 rounded-2xl border border-[#EEDFD7] bg-white p-3 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between border-b border-[#F3EAE5] pb-2 mb-2">
+                      <span className="text-sm font-bold text-[#3D2010] font-sans">Notifications</span>
+                      {unreadCount > 0 && (
+                        <span className="rounded-full bg-[#FFF1E8] px-2 py-0.5 text-[10px] font-extrabold text-[#D97757] leading-none">
+                          {unreadCount} new
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="max-h-64 overflow-y-auto space-y-2 font-sans pr-1">
+                      {notifications.length === 0 ? (
+                        <div className="py-6 text-center text-xs text-gray-400 italic">
+                          No notifications
+                        </div>
+                      ) : (
+                        notifications.map((n) => (
+                          <div 
+                            key={n.notificationId} 
+                            className={`p-2.5 rounded-xl border transition-colors text-left ${
+                              n.isRead ? "border-gray-50 bg-gray-50/50" : "border-[#FFF1E8] bg-[#FFFBF8]"
+                            }`}
+                          >
+                            <div className="flex justify-between items-start">
+                              <span className={`text-xs font-bold ${n.isRead ? "text-gray-500" : "text-[#3D2010]"}`}>
+                                {n.title}
+                              </span>
+                              {!n.isRead && (
+                                <button 
+                                  onClick={() => markAsRead(n.notificationId)}
+                                  className="text-[10px] font-extrabold text-[#D97757] hover:underline focus:outline-none"
+                                >
+                                  Mark read
+                                </button>
+                              )}
+                            </div>
+                            <p className={`text-[11px] mt-1 leading-relaxed ${n.isRead ? "text-gray-400" : "text-gray-600"}`}>
+                              {n.message}
+                            </p>
+                            <span className="text-[9px] text-gray-400 block mt-1">
+                              {new Date(n.createdAt).toLocaleDateString("en-IN", {
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit"
+                              })}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
             <button 
               onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
               className="flex items-center gap-3 focus:outline-none hover:opacity-90 text-left"
@@ -1817,7 +2222,7 @@ export default function ReceptionistDashboard() {
                 {patientPrescriptions.map((p) => {
                   const doctorUser = p.encounter?.doctor?.user || p.doctor?.user;
                   const docName = doctorUser ? fullName(doctorUser) : "Clinician";
-                  const diag = p.encounter?.diagnosis || p.diagnosis || "Consultation Diagnosis";
+                  const diag = p.encounter?.diagnoses?.[0]?.diagnosisText || p.encounter?.diagnosis || p.diagnosis || p.encounter?.reason || "Consultation Diagnosis";
                   const meds = p.prescriptionMedicines || p.medicines || [];
 
                   return (

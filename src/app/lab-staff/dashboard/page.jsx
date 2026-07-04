@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 import React from "react";
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import DashboardCalendar from "@/components/DashboardCalendar";
 
@@ -243,29 +243,10 @@ export default function LabStaffDashboard() {
   const router = useRouter();
   const [activeNav, setActiveNav] = useState("Dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [badges, setBadges] = useState({});
+  const [notifications, setNotifications] = useState([]);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
 
-  useEffect(() => {
-    const initialBadges = {};
-    if (navItems.includes("Pending Requests")) initialBadges["Pending Requests"] = 2;
-    if (navItems.includes("Appointments")) initialBadges["Appointments"] = 1;
-    if (navItems.includes("Appointments Queue")) initialBadges["Appointments Queue"] = 2;
-    if (navItems.includes("Submit Lab Result")) initialBadges["Submit Lab Result"] = 1;
-    if (navItems.includes("Medical Records")) initialBadges["Medical Records"] = 1;
-    setBadges(initialBadges);
 
-    const interval = setInterval(() => {
-      const potentialTabs = navItems.filter(item => item !== "Dashboard" && item !== "Hospital Settings" && item !== "Lab Test Catalog");
-      if (potentialTabs.length === 0) return;
-      const randomTab = potentialTabs[Math.floor(Math.random() * potentialTabs.length)];
-      setBadges(prev => ({
-        ...prev,
-        [randomTab]: (prev[randomTab] || 0) + 1
-      }));
-    }, 25000);
-
-    return () => clearInterval(interval);
-  }, []);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [profileModalMode, setProfileModalMode] = useState("view"); // "view" or "edit"
@@ -312,6 +293,48 @@ export default function LabStaffDashboard() {
       emergencyContact: profile.emergencyContact || "",
     });
   }, [profile, isProfileModalOpen]);
+
+  const fetchNotifications = useCallback(async () => {
+    const token = localStorage.getItem("labStaffToken");
+    if (!token) return;
+    try {
+      const res = await fetch(`${apiBaseUrl}/notifications`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const list = await res.json();
+        setNotifications(Array.isArray(list) ? list : []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
+
+  const markAsRead = async (id) => {
+    const token = localStorage.getItem("labStaffToken");
+    if (!token) return;
+    try {
+      const res = await fetch(`${apiBaseUrl}/notifications/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ isRead: true })
+      });
+      if (res.ok) {
+        setNotifications(prev => prev.map(n => n.notificationId === id ? { ...n, isRead: true } : n));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const unreadCount = notifications.filter(n => !n.isRead).length;
 
 
   const handleUpdateProfile = async (e) => {
@@ -388,60 +411,71 @@ export default function LabStaffDashboard() {
     setLoading(true);
     setError("");
     try {
-      // 1. Get profile/hospital info (cached)
-      const cachedProfile = getCachedItem("lab_cached_profile");
-      let currentProfile = cachedProfile;
-      if (!currentProfile) {
-        const profileRes = await fetch(`${apiBaseUrl}/users/myinfo`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (profileRes.ok) {
-          const profileData = await profileRes.json();
-          currentProfile = profileData.data;
-          setCachedItem("lab_cached_profile", currentProfile);
-        }
-      }
-      setProfile(currentProfile);
+      await Promise.all([
+        (async () => {
+          // 1. Get profile/hospital info (cached)
+          const cachedProfile = getCachedItem("lab_cached_profile");
+          let currentProfile = cachedProfile;
+          if (!currentProfile) {
+            const profileRes = await fetch(`${apiBaseUrl}/users/myinfo`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (profileRes.ok) {
+              const profileData = await profileRes.json();
+              currentProfile = profileData.data;
+              setCachedItem("lab_cached_profile", currentProfile);
+            }
+          }
+          setProfile(currentProfile);
+        })(),
 
-      // 2. Get lab tests (cached catalog)
-      const cachedTests = getCachedItem("lab_cached_tests");
-      let currentTests = cachedTests || [];
-      if (!cachedTests) {
-        const testsRes = await fetch(`${apiBaseUrl}/lab-managers/lab-tests`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (testsRes.ok) {
-          const testsData = await testsRes.json();
-          currentTests = Array.isArray(testsData) ? testsData : [];
-          setCachedItem("lab_cached_tests", currentTests);
-        }
-      }
-      setLabTests(currentTests);
+        (async () => {
+          // 2. Get lab tests (cached catalog)
+          const cachedTests = getCachedItem("lab_cached_tests");
+          let currentTests = cachedTests || [];
+          if (!cachedTests) {
+            const testsRes = await fetch(`${apiBaseUrl}/lab-managers/lab-tests`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (testsRes.ok) {
+              const testsData = await testsRes.json();
+              currentTests = Array.isArray(testsData) ? testsData : [];
+              setCachedItem("lab_cached_tests", currentTests);
+            }
+          }
+          setLabTests(currentTests);
+        })(),
 
-      // 3. Get lab results (dynamic log)
-      const resultsRes = await fetch(`${apiBaseUrl}/lab-managers/lab-results`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (resultsRes.ok) {
-        const resultsData = await resultsRes.json();
-        setLabResults(Array.isArray(resultsData) ? resultsData : []);
-      }
+        (async () => {
+          // 3. Get lab results (dynamic log)
+          const resultsRes = await fetch(`${apiBaseUrl}/lab-managers/lab-results`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (resultsRes.ok) {
+            const resultsData = await resultsRes.json();
+            setLabResults(Array.isArray(resultsData) ? resultsData : []);
+          }
+        })(),
 
-      // 4. Get encounters to select patient
-      const encountersRes = await fetch(`${apiBaseUrl}/encounters`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (encountersRes.ok) {
-        const encountersData = await encountersRes.json();
-        setEncounters(Array.isArray(encountersData) ? encountersData : []);
-      }
+        (async () => {
+          // 4. Get encounters to select patient
+          const encountersRes = await fetch(`${apiBaseUrl}/encounters`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (encountersRes.ok) {
+            const encountersData = await encountersRes.json();
+            setEncounters(Array.isArray(encountersData) ? encountersData : []);
+          }
+        })(),
 
+        fetchNotifications()
+      ]);
     } catch (requestError) {
       setError(requestError.message || "Failed to load laboratory data");
     } finally {
       setLoading(false);
     }
-  }, [logout]);
+  }, [logout, fetchNotifications]);
 
   useEffect(() => {
     loadData();
@@ -801,15 +835,10 @@ export default function LabStaffDashboard() {
             {navItems.map((item) => (
               <li key={item}>
                 <button
-                  onClick={() => { setActiveNav(item); setBadges((prev) => ({ ...prev, [item]: 0 })); setIsSidebarOpen(false); setSuccessMsg(""); }}
-                  className={`w-full rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-colors flex justify-between items-center ${activeNav === item ? "bg-[#FFF1E8] text-[#D97757]" : "text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#3D2010]"}`}
+                  onClick={() => { setActiveNav(item); setIsSidebarOpen(false); setSuccessMsg(""); }}
+                  className={`w-full rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-colors ${activeNav === item ? "bg-[#FFF1E8] text-[#D97757]" : "text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#3D2010]"}`}
                 >
-                  <span>{item}</span>
-                  {badges[item] > 0 && (
-                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#D97757] px-1.5 text-[10px] font-extrabold text-white leading-none">
-                      {badges[item]}
-                    </span>
-                  )}
+                  {item}
                 </button>
               </li>
             ))}
@@ -834,6 +863,80 @@ export default function LabStaffDashboard() {
             <p className="text-sm font-bold text-[#3D2010]">{hospitalName}</p>
           </div>
           <div className="relative flex items-center gap-3">
+            {/* Notification Bell */}
+            <div className="relative">
+              <button 
+                onClick={() => setIsNotificationOpen(!isNotificationOpen)}
+                className="relative rounded-full p-2 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors focus:outline-none"
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                </svg>
+                {unreadCount > 0 && (
+                  <span className="absolute right-1.5 top-1.5 flex h-2.5 w-2.5 rounded-full bg-[#D97757] ring-2 ring-white animate-pulse" />
+                )}
+              </button>
+
+              {isNotificationOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsNotificationOpen(false)} />
+                  <div className="absolute right-0 top-12 z-50 w-80 rounded-2xl border border-[#EEDFD7] bg-white p-3 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between border-b border-[#F3EAE5] pb-2 mb-2">
+                      <span className="text-sm font-bold text-[#3D2010] font-sans">Notifications</span>
+                      {unreadCount > 0 && (
+                        <span className="rounded-full bg-[#FFF1E8] px-2 py-0.5 text-[10px] font-extrabold text-[#D97757] leading-none">
+                          {unreadCount} new
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="max-h-64 overflow-y-auto space-y-2 font-sans pr-1">
+                      {notifications.length === 0 ? (
+                        <div className="py-6 text-center text-xs text-gray-400 italic">
+                          No notifications
+                        </div>
+                      ) : (
+                        notifications.map((n) => (
+                          <div 
+                            key={n.notificationId} 
+                            className={`p-2.5 rounded-xl border transition-colors text-left ${
+                              n.isRead ? "border-gray-50 bg-gray-50/50" : "border-[#FFF1E8] bg-[#FFFBF8]"
+                            }`}
+                          >
+                            <div className="flex justify-between items-start">
+                              <span className={`text-xs font-bold ${n.isRead ? "text-gray-500" : "text-[#3D2010]"}`}>
+                                {n.title}
+                              </span>
+                              {!n.isRead && (
+                                <button 
+                                  onClick={() => markAsRead(n.notificationId)}
+                                  className="text-[10px] font-extrabold text-[#D97757] hover:underline focus:outline-none"
+                                >
+                                  Mark read
+                                </button>
+                              )}
+                            </div>
+                            <p className={`text-[11px] mt-1 leading-relaxed ${n.isRead ? "text-gray-400" : "text-gray-600"}`}>
+                              {n.message}
+                            </p>
+                            <span className="text-[9px] text-gray-400 block mt-1">
+                              {new Date(n.createdAt).toLocaleDateString("en-IN", {
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit"
+                              })}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
             <button 
               onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
               className="flex items-center gap-3 focus:outline-none hover:opacity-90 text-left"

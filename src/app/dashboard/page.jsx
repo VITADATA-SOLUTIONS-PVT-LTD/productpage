@@ -2,7 +2,7 @@
 
 import React from "react";
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import DashboardCalendar from "@/components/DashboardCalendar";
 
@@ -16,6 +16,7 @@ const navItems = [
   "Patients",
   "Lab Reports",
   "Financial Reports",
+  "Patient Feedback",
   "Analytics",
   "Hospital Settings",
 ];
@@ -1092,6 +1093,232 @@ function PatientsView({ rows }) {
   );
 }
 
+function FeedbackView({ hospitals = [], doctors = [], profile }) {
+  const [feedbacks, setFeedbacks] = useState([]);
+  const [selectedHospitalFilter, setSelectedHospitalFilter] = useState("");
+  const [selectedDoctorFilter, setSelectedDoctorFilter] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const isSuperAdmin = profile?.roles?.includes("SUPER_ADMIN");
+  const isHospitalAdmin = profile?.roles?.includes("HOSPITAL_ADMIN");
+  const adminHospitalId = profile?.hospitalAdmin?.hospitalId || "";
+
+  useEffect(() => {
+    if (isHospitalAdmin && adminHospitalId) {
+      setSelectedHospitalFilter(adminHospitalId);
+    }
+  }, [isHospitalAdmin, adminHospitalId]);
+
+  const loadFeedbacks = useCallback(async () => {
+    const token = localStorage.getItem("adminToken");
+    if (!token) return;
+    setLoading(true);
+    setError("");
+
+    try {
+      const apiBaseUrl =
+        process.env.NEXT_PUBLIC_URL ||
+        process.env.NEXT_PUBLIC_API_URL ||
+        process.env.NEXT_PUBLIC_BACKEND_URL;
+      
+      let url = `${apiBaseUrl}/feedback?`;
+      if (isHospitalAdmin) {
+        url += `hospitalId=${adminHospitalId}&`;
+      } else if (selectedHospitalFilter) {
+        url += `hospitalId=${selectedHospitalFilter}&`;
+      }
+      
+      if (selectedDoctorFilter) {
+        url += `doctorId=${selectedDoctorFilter}&`;
+      }
+
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to load feedbacks");
+      }
+
+      const list = await res.json();
+      setFeedbacks(Array.isArray(list) ? list : []);
+    } catch (err) {
+      setError(err.message || "Failed to load feedbacks");
+    } finally {
+      setLoading(false);
+    }
+  }, [isHospitalAdmin, adminHospitalId, selectedHospitalFilter, selectedDoctorFilter]);
+
+  useEffect(() => {
+    loadFeedbacks();
+  }, [loadFeedbacks]);
+
+  const renderStars = (rating) => {
+    if (!rating) return "—";
+    const num = Number(rating);
+    const fullStars = Math.floor(num);
+    const hasHalf = num % 1 !== 0;
+    const stars = [];
+    
+    for (let i = 0; i < fullStars; i++) {
+      stars.push("★");
+    }
+    if (hasHalf) {
+      stars.push("½");
+    }
+    const emptyCount = 5 - Math.ceil(num);
+    for (let i = 0; i < emptyCount; i++) {
+      stars.push("☆");
+    }
+    return <span className="text-amber-500 font-bold tracking-wider text-xs">{stars.join("")} ({num})</span>;
+  };
+
+  const filteredDoctors = useMemo(() => {
+    if (!selectedHospitalFilter) return doctors;
+    return doctors.filter(doc => {
+      return doc.hospitals?.some(h => h.hospitalId === selectedHospitalFilter || h.hospital?.hospitalId === selectedHospitalFilter);
+    });
+  }, [doctors, selectedHospitalFilter]);
+
+  return (
+    <div className="space-y-6">
+      <SectionHeader title="Patient Feedback Reports" description="Review ratings and comments submitted by patients after completing their visits." />
+      
+      <div className="bg-white rounded-2xl border border-[#EEDFD7] p-5 shadow-sm space-y-4">
+        <div className="flex flex-wrap items-center gap-4">
+          {isSuperAdmin && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-bold text-[#8B7469] uppercase tracking-wider font-sans">Hospital:</span>
+              <select
+                value={selectedHospitalFilter}
+                onChange={e => {
+                  setSelectedHospitalFilter(e.target.value);
+                  setSelectedDoctorFilter("");
+                }}
+                className="rounded-xl border border-[#EEDFD7] bg-white px-3 py-1.5 text-xs text-[#3D2010] outline-none focus:border-[#D97757] font-sans min-w-[200px]"
+              >
+                <option value="">All Hospitals</option>
+                {hospitals.map(h => (
+                  <option key={h.hospitalId} value={h.hospitalId}>{h.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {isHospitalAdmin && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-bold text-[#8B7469] uppercase tracking-wider font-sans">Hospital:</span>
+              <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-1.5 text-xs text-gray-500 font-sans min-w-[200px] font-semibold">
+                {hospitals.find(h => h.hospitalId === adminHospitalId)?.name || "Linked Hospital"}
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-bold text-[#8B7469] uppercase tracking-wider font-sans">Doctor:</span>
+            <select
+              value={selectedDoctorFilter}
+              onChange={e => setSelectedDoctorFilter(e.target.value)}
+              className="rounded-xl border border-[#EEDFD7] bg-white px-3 py-1.5 text-xs text-[#3D2010] outline-none focus:border-[#D97757] font-sans min-w-[200px]"
+            >
+              <option value="">All Doctors</option>
+              {filteredDoctors.map(doc => (
+                <option key={doc.doctorId} value={doc.doctorId}>
+                  Dr. {doc.user?.firstName} {doc.user?.lastName} ({doc.specialization})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex min-h-[200px] items-center justify-center rounded-2xl border border-[#EEDFD7] bg-white">
+          <div className="text-center">
+            <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-[#F3DED2] border-t-[#D97757]" />
+            <p className="mt-3 text-xs text-[#8B7469]">Loading feedbacks...</p>
+          </div>
+        </div>
+      ) : error ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      ) : feedbacks.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-[#EEDFD7] bg-white p-8 text-center text-sm text-[#9C8276]">
+          No feedback reports found for the selected filters.
+        </div>
+      ) : (
+        <DataTable
+          rows={feedbacks}
+          keyFor={(row) => row.feedbackId}
+          emptyMessage="No feedbacks found."
+          columns={[
+            {
+              label: "Date / Patient",
+              render: (row) => {
+                const patientUser = row.encounter?.patient?.user;
+                const patientName = patientUser ? `${patientUser.firstName} ${patientUser.lastName}` : "Anonymous";
+                return (
+                  <div>
+                    <p className="font-semibold text-[#3D2010]">{patientName}</p>
+                    <p className="mt-1 text-[10px] text-[#9C8276]">{formatDate(row.submittedAt, true)}</p>
+                  </div>
+                );
+              }
+            },
+            {
+              label: "Clinical Ratings",
+              render: (row) => (
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-[#8B7469] w-12">Doc:</span>
+                    {renderStars(row.doctorRating)}
+                  </div>
+                  <div className="text-[10px] text-gray-500 italic pl-14">
+                    Dr. {row.encounter?.doctor?.user?.firstName} {row.encounter?.doctor?.user?.lastName}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-[#8B7469] w-12">Hosp:</span>
+                    {renderStars(row.hospitalRating)}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-[#8B7469] w-12">Recept:</span>
+                    {renderStars(row.receptionistRating)}
+                  </div>
+                </div>
+              )
+            },
+            {
+              label: "Tech / Web Ratings",
+              render: (row) => (
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-[#8B7469] w-12">Website:</span>
+                    {renderStars(row.websiteRating)}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-[#8B7469] w-12">Payment:</span>
+                    {renderStars(row.paymentRating)}
+                  </div>
+                </div>
+              )
+            },
+            {
+              label: "Comments / Suggestions",
+              render: (row) => (
+                <p className="text-xs text-[#554238] max-w-sm whitespace-pre-wrap leading-relaxed">
+                  {row.comments || <span className="italic text-[#9C8276]">No comments provided.</span>}
+                </p>
+              )
+            }
+          ]}
+        />
+      )}
+    </div>
+  );
+}
+
 function LabReportsView({ rows }) {
   return (
     <>
@@ -1255,29 +1482,9 @@ export default function AdminDashboard() {
     emergencyContact: "",
   });
 
-  const [badges, setBadges] = useState({});
+  const [notifications, setNotifications] = useState([]);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
 
-  useEffect(() => {
-    const initialBadges = {};
-    if (navItems.includes("Pending Requests")) initialBadges["Pending Requests"] = 2;
-    if (navItems.includes("Appointments")) initialBadges["Appointments"] = 1;
-    if (navItems.includes("Appointments Queue")) initialBadges["Appointments Queue"] = 2;
-    if (navItems.includes("Submit Lab Result")) initialBadges["Submit Lab Result"] = 1;
-    if (navItems.includes("Medical Records")) initialBadges["Medical Records"] = 1;
-    setBadges(initialBadges);
-
-    const interval = setInterval(() => {
-      const potentialTabs = navItems.filter(item => item !== "Dashboard" && item !== "Hospital Settings" && item !== "Lab Test Catalog");
-      if (potentialTabs.length === 0) return;
-      const randomTab = potentialTabs[Math.floor(Math.random() * potentialTabs.length)];
-      setBadges(prev => ({
-        ...prev,
-        [randomTab]: (prev[randomTab] || 0) + 1
-      }));
-    }, 25000);
-
-    return () => clearInterval(interval);
-  }, []);
 
   // IMPORTANT: `data` must be declared before this effect to avoid
   // `ReferenceError: Cannot access 'data' before initialization`.
@@ -1325,6 +1532,48 @@ export default function AdminDashboard() {
       });
     }
   }, [data, isProfileModalOpen]);
+
+  const fetchNotifications = useCallback(async () => {
+    const token = localStorage.getItem("adminToken");
+    if (!token) return;
+    try {
+      const res = await fetch(`${apiBaseUrl}/notifications`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const list = await res.json();
+        setNotifications(Array.isArray(list) ? list : []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
+
+  const markAsRead = async (id) => {
+    const token = localStorage.getItem("adminToken");
+    if (!token) return;
+    try {
+      const res = await fetch(`${apiBaseUrl}/notifications/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ isRead: true })
+      });
+      if (res.ok) {
+        setNotifications(prev => prev.map(n => n.notificationId === id ? { ...n, isRead: true } : n));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const unreadCount = notifications.filter(n => !n.isRead).length;
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -1364,13 +1613,14 @@ export default function AdminDashboard() {
       }
       setData(payload);
       setSelectedHospitalId((current) => current || payload.profile.hospitalId || payload.hospitals[0]?.hospitalId || "");
+      fetchNotifications();
     } catch (requestError) {
       setError(requestError.message || "Unable to connect to the VitaData API");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [logout]);
+  }, [logout, fetchNotifications]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => loadDashboard(), 0);
@@ -1519,6 +1769,13 @@ export default function AdminDashboard() {
       Patients: <PatientsView rows={data.patients} />,
       "Lab Reports": <LabReportsView rows={data.labResults} />,
       "Financial Reports": <FinancialReportsView rows={data.invoices} overview={data.overview} />,
+      "Patient Feedback": (
+        <FeedbackView
+          hospitals={data.hospitals}
+          doctors={data.doctors}
+          profile={data.profile}
+        />
+      ),
       Analytics: <AnalyticsView rows={data.analytics} overview={data.overview} />,
       "Hospital Settings": (
         <HospitalSettingsView
@@ -1552,13 +1809,8 @@ export default function AdminDashboard() {
           <ul className="space-y-1">
             {navItems.map((item) => (
               <li key={item}>
-                <button onClick={() => { setActiveNav(item); setBadges((prev) => ({ ...prev, [item]: 0 })); setIsSidebarOpen(false); }} className={`w-full rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-colors flex justify-between items-center ${activeNav === item ? "bg-[#FFF1E8] text-[#D97757]" : "text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#3D2010]"}`}>
-                  <span>{item}</span>
-                  {badges[item] > 0 && (
-                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#D97757] px-1.5 text-[10px] font-extrabold text-white leading-none">
-                      {badges[item]}
-                    </span>
-                  )}
+                <button onClick={() => { setActiveNav(item); setIsSidebarOpen(false); }} className={`w-full rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-colors ${activeNav === item ? "bg-[#FFF1E8] text-[#D97757]" : "text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#3D2010]"}`}>
+                  {item}
                 </button>
               </li>
             ))}
@@ -1579,6 +1831,80 @@ export default function AdminDashboard() {
             <p className="text-sm font-bold text-[#3D2010]">{data?.hospitals?.length === 1 ? data.hospitals[0].name : "Healthcare network"}</p>
           </div>
           <div className="relative flex items-center gap-3">
+            {/* Notification Bell */}
+            <div className="relative">
+              <button 
+                onClick={() => setIsNotificationOpen(!isNotificationOpen)}
+                className="relative rounded-full p-2 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors focus:outline-none"
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                </svg>
+                {unreadCount > 0 && (
+                  <span className="absolute right-1.5 top-1.5 flex h-2.5 w-2.5 rounded-full bg-[#D97757] ring-2 ring-white animate-pulse" />
+                )}
+              </button>
+
+              {isNotificationOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsNotificationOpen(false)} />
+                  <div className="absolute right-0 top-12 z-50 w-80 rounded-2xl border border-[#EEDFD7] bg-white p-3 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between border-b border-[#F3EAE5] pb-2 mb-2">
+                      <span className="text-sm font-bold text-[#3D2010] font-sans">Notifications</span>
+                      {unreadCount > 0 && (
+                        <span className="rounded-full bg-[#FFF1E8] px-2 py-0.5 text-[10px] font-extrabold text-[#D97757] leading-none">
+                          {unreadCount} new
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="max-h-64 overflow-y-auto space-y-2 font-sans pr-1">
+                      {notifications.length === 0 ? (
+                        <div className="py-6 text-center text-xs text-gray-400 italic">
+                          No notifications
+                        </div>
+                      ) : (
+                        notifications.map((n) => (
+                          <div 
+                            key={n.notificationId} 
+                            className={`p-2.5 rounded-xl border transition-colors text-left ${
+                              n.isRead ? "border-gray-50 bg-gray-50/50" : "border-[#FFF1E8] bg-[#FFFBF8]"
+                            }`}
+                          >
+                            <div className="flex justify-between items-start">
+                              <span className={`text-xs font-bold ${n.isRead ? "text-gray-500" : "text-[#3D2010]"}`}>
+                                {n.title}
+                              </span>
+                              {!n.isRead && (
+                                <button 
+                                  onClick={() => markAsRead(n.notificationId)}
+                                  className="text-[10px] font-extrabold text-[#D97757] hover:underline focus:outline-none"
+                                >
+                                  Mark read
+                                </button>
+                              )}
+                            </div>
+                            <p className={`text-[11px] mt-1 leading-relaxed ${n.isRead ? "text-gray-400" : "text-gray-600"}`}>
+                              {n.message}
+                            </p>
+                            <span className="text-[9px] text-gray-400 block mt-1">
+                              {new Date(n.createdAt).toLocaleDateString("en-IN", {
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit"
+                              })}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
             <button 
               onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
               className="flex items-center gap-3 focus:outline-none hover:opacity-90 text-left"

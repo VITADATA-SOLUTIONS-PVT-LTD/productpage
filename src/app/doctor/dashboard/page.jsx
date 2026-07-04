@@ -2,7 +2,7 @@
 
 import React from "react";
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import DashboardCalendar from "@/components/DashboardCalendar";
 
@@ -421,29 +421,10 @@ export default function DoctorDashboard() {
   const router = useRouter();
   const [activeNav, setActiveNav] = useState("Dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [badges, setBadges] = useState({});
+  const [notifications, setNotifications] = useState([]);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
 
-  useEffect(() => {
-    const initialBadges = {};
-    if (navItems.includes("Pending Requests")) initialBadges["Pending Requests"] = 2;
-    if (navItems.includes("Appointments")) initialBadges["Appointments"] = 1;
-    if (navItems.includes("Appointments Queue")) initialBadges["Appointments Queue"] = 2;
-    if (navItems.includes("Submit Lab Result")) initialBadges["Submit Lab Result"] = 1;
-    if (navItems.includes("Medical Records")) initialBadges["Medical Records"] = 1;
-    setBadges(initialBadges);
 
-    const interval = setInterval(() => {
-      const potentialTabs = navItems.filter(item => item !== "Dashboard" && item !== "Hospital Settings" && item !== "Lab Test Catalog");
-      if (potentialTabs.length === 0) return;
-      const randomTab = potentialTabs[Math.floor(Math.random() * potentialTabs.length)];
-      setBadges(prev => ({
-        ...prev,
-        [randomTab]: (prev[randomTab] || 0) + 1
-      }));
-    }, 25000);
-
-    return () => clearInterval(interval);
-  }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
@@ -507,6 +488,10 @@ export default function DoctorDashboard() {
     { medicineId: "", dosage: "", times: { morning: false, afternoon: false, night: false }, durationDays: 5 }
   ]);
 
+  // Lab Tests
+  const [labTests, setLabTests] = useState([]);
+  const [suggestedLabTests, setSuggestedLabTests] = useState([]);
+
   const doctorIdentity = React.useMemo(() => getDoctorIdentity(profile), [profile]);
   const scopedPatients = React.useMemo(
     () => {
@@ -521,6 +506,48 @@ export default function DoctorDashboard() {
     () => prescriptions.filter((prescription) => isCurrentDoctorPrescription(prescription, doctorIdentity)),
     [prescriptions, doctorIdentity],
   );
+
+  const fetchNotifications = useCallback(async () => {
+    const token = localStorage.getItem("doctorToken");
+    if (!token) return;
+    try {
+      const res = await fetch(`${apiBaseUrl}/notifications`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const list = await res.json();
+        setNotifications(Array.isArray(list) ? list : []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
+
+  const markAsRead = async (id) => {
+    const token = localStorage.getItem("doctorToken");
+    if (!token) return;
+    try {
+      const res = await fetch(`${apiBaseUrl}/notifications/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ isRead: true })
+      });
+      if (res.ok) {
+        setNotifications(prev => prev.map(n => n.notificationId === id ? { ...n, isRead: true } : n));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const unreadCount = notifications.filter(n => !n.isRead).length;
 
   const doctorEvents = useMemo(() => {
     return appointments.map(a => ({
@@ -605,55 +632,84 @@ export default function DoctorDashboard() {
 
       const docId = currentProfile?.doctor?.doctorId;
 
-      // 2. Encounters (dynamic)
-      const encountersUrl = docId ? `${apiBaseUrl}/encounters?doctorId=${encodeURIComponent(docId)}` : `${apiBaseUrl}/encounters`;
-      const encountersRes = await fetch(encountersUrl, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (encountersRes.ok) {
-        const encountersData = await encountersRes.json();
-        setAppointments(Array.isArray(encountersData) ? encountersData : []);
-      }
+      // Fetch the rest of the data in parallel
+      await Promise.all([
+        (async () => {
+          // 2. Encounters (dynamic)
+          const encountersUrl = docId ? `${apiBaseUrl}/encounters?doctorId=${encodeURIComponent(docId)}` : `${apiBaseUrl}/encounters`;
+          const encountersRes = await fetch(encountersUrl, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (encountersRes.ok) {
+            const encountersData = await encountersRes.json();
+            setAppointments(Array.isArray(encountersData) ? encountersData : []);
+          }
+        })(),
 
-      // 3. Patients (dynamic)
-      const patientsRes = await fetch(`${apiBaseUrl}/patients`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (patientsRes.ok) {
-        const patientsData = await patientsRes.json();
-        setPatients(Array.isArray(patientsData) ? patientsData : []);
-      }
+        (async () => {
+          // 3. Patients (dynamic)
+          const patientsRes = await fetch(`${apiBaseUrl}/patients`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (patientsRes.ok) {
+            const patientsData = await patientsRes.json();
+            setPatients(Array.isArray(patientsData) ? patientsData : []);
+          }
+        })(),
 
-      // 4. Vital Types (cached)
-      const cachedVitalTypes = getCachedItem("doctor_cached_vital_types");
-      let currentVitalTypes = cachedVitalTypes || [];
-      if (!cachedVitalTypes) {
-        const vitalsRes = await fetch(`${apiBaseUrl}/vitals/types`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (vitalsRes.ok) {
-          const vitalsData = await vitalsRes.json();
-          currentVitalTypes = Array.isArray(vitalsData) ? vitalsData : [];
-          setCachedItem("doctor_cached_vital_types", currentVitalTypes);
-        }
-      }
-      setVitalTypes(currentVitalTypes);
+        (async () => {
+          // 4. Vital Types (cached)
+          const cachedVitalTypes = getCachedItem("doctor_cached_vital_types");
+          let currentVitalTypes = cachedVitalTypes || [];
+          if (!cachedVitalTypes) {
+            const vitalsRes = await fetch(`${apiBaseUrl}/vitals/types`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (vitalsRes.ok) {
+              const vitalsData = await vitalsRes.json();
+              currentVitalTypes = Array.isArray(vitalsData) ? vitalsData : [];
+              setCachedItem("doctor_cached_vital_types", currentVitalTypes);
+            }
+          }
+          setVitalTypes(currentVitalTypes);
+        })(),
 
-      // 5. Prescriptions (dynamic)
-      const prescriptionsRes = await fetch(`${apiBaseUrl}/prescriptions`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (prescriptionsRes.ok) {
-        const prescData = await prescriptionsRes.json();
-        setPrescriptions(Array.isArray(prescData) ? prescData : []);
-      }
+        (async () => {
+          // 5. Prescriptions (dynamic)
+          const prescriptionsRes = await fetch(`${apiBaseUrl}/prescriptions`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (prescriptionsRes.ok) {
+            const prescData = await prescriptionsRes.json();
+            setPrescriptions(Array.isArray(prescData) ? prescData : []);
+          }
+        })(),
 
+        (async () => {
+          // 6. Lab Tests (cached)
+          const cachedLabTests = getCachedItem("doctor_cached_lab_tests");
+          let currentLabTests = cachedLabTests || [];
+          if (!cachedLabTests) {
+            const labTestsRes = await fetch(`${apiBaseUrl}/lab-managers/lab-tests`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (labTestsRes.ok) {
+              const labTestsData = await labTestsRes.json();
+              currentLabTests = Array.isArray(labTestsData) ? labTestsData : [];
+              setCachedItem("doctor_cached_lab_tests", currentLabTests);
+            }
+          }
+          setLabTests(currentLabTests);
+        })(),
+
+        fetchNotifications()
+      ]);
     } catch (requestError) {
       setError(requestError.message || "Failed to load clinical portal data");
     } finally {
       setLoading(false);
     }
-  }, [logout]);
+  }, [logout, fetchNotifications]);
 
   useEffect(() => {
     loadData();
@@ -836,6 +892,7 @@ export default function DoctorDashboard() {
         value: "",
         source: "MANUAL",
       });
+      loadData();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1010,6 +1067,26 @@ export default function DoctorDashboard() {
             }),
           });
         }
+
+        // 3. Submit suggested lab tests
+        const encounterId = prescriptionMeta.encounterId;
+        for (const lab of suggestedLabTests) {
+          if (!lab.labTestId) continue;
+          await fetch(`${apiBaseUrl}/lab-managers/lab-results`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              encounterId,
+              labTestId: lab.labTestId,
+              resultValue: null,
+              isAbnormal: null,
+              remarks: lab.notes || null,
+            }),
+          });
+        }
       }
 
       // Re-fetch all prescriptions
@@ -1022,18 +1099,12 @@ export default function DoctorDashboard() {
       }
 
       setSuccessMsg(editingPrescription ? "Prescription updated successfully!" : "Prescription recorded successfully!");
-      setPrescriptionMeta({
-        encounterId: "",
-        symptoms: "",
-        diagnosisText: "",
-        severity: "MILD",
-        nextVisit: "",
-      });
+      setPrescriptionMeta({ encounterId: "", symptoms: "", diagnosisText: "", severity: "MILD", nextVisit: "" });
       setPrescriptionMedicines([{ medicineId: "", dosage: "", times: { morning: false, afternoon: false, night: false }, durationDays: 5 }]);
+      setSuggestedLabTests([]);
       setEditingPrescription(null);
       setIsPrescriptionFormOpen(false);
       if (managingPatient) {
-        // Return to patient list
         setActiveNav("Patients Registry");
       } else {
         setActiveNav("Dashboard");
@@ -1174,7 +1245,15 @@ export default function DoctorDashboard() {
               <AutocompleteSelect
                 label="Select Appointment / Patient"
                 value={prescriptionMeta.encounterId}
-                onChange={(val) => setPrescriptionMeta({ ...prescriptionMeta, encounterId: val })}
+                onChange={(val) => {
+                  const selectedEnc = appointments.find(e => e.encounterId === val);
+                  setPrescriptionMeta({
+                    ...prescriptionMeta,
+                    encounterId: val,
+                    symptoms: selectedEnc?.chiefComplaint || selectedEnc?.reason || "",
+                    diagnosisText: selectedEnc?.diagnosis || selectedEnc?.reason || ""
+                  });
+                }}
                 options={(editingPrescription 
                   ? [editingPrescription.encounter, ...filteredActiveEncounters.filter(e => e.encounterId !== editingPrescription.encounterId)].filter(Boolean)
                   : filteredActiveEncounters
@@ -1325,6 +1404,89 @@ export default function DoctorDashboard() {
                         Remove
                       </button>
                     )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Suggested Lab Tests Section */}
+          <div className="border-t border-[#F3EAE5] pt-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-md font-bold text-[#3D2010]">Suggested Lab Tests</h3>
+                <p className="text-xs text-[#9C8276] mt-0.5">Optional — add tests you&apos;d like the patient to undergo</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSuggestedLabTests([...suggestedLabTests, { labTestId: "", scheduledDate: "", notes: "" }])}
+                className="rounded-lg bg-[#EEF4FF] border border-[#C7D9F8] px-3 py-1.5 text-xs font-semibold text-[#4B7BF5] hover:bg-[#E4EDFF]"
+              >
+                + Add Lab Test
+              </button>
+            </div>
+
+            {suggestedLabTests.length === 0 && (
+              <p className="text-xs text-[#B8A8A1] italic py-2">No lab tests suggested for this prescription.</p>
+            )}
+
+            <div className="space-y-3">
+              {suggestedLabTests.map((lab, li) => (
+                <div key={li} className="grid gap-3 sm:grid-cols-12 items-end bg-[#F5F8FF] p-3 rounded-xl border border-[#C7D9F8]">
+                  <div className="sm:col-span-4">
+                    <label className="block text-xs font-semibold text-[#554238] mb-1">Lab Test</label>
+                    <select
+                      className="w-full rounded-lg border border-[#C7D9F8] bg-white px-3 py-2 text-xs focus:border-[#4B7BF5] focus:outline-none"
+                      value={lab.labTestId}
+                      onChange={e => {
+                        const updated = [...suggestedLabTests];
+                        updated[li] = { ...updated[li], labTestId: e.target.value };
+                        setSuggestedLabTests(updated);
+                      }}
+                    >
+                      <option value="">Select a test...</option>
+                      {labTests.map(t => (
+                        <option key={t.labTestId} value={t.labTestId}>{t.testName}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="sm:col-span-3">
+                    <label className="block text-xs font-semibold text-[#554238] mb-1">Suggested Date</label>
+                    <input
+                      type="date"
+                      className="w-full rounded-lg border border-[#C7D9F8] bg-white px-3 py-2 text-xs focus:border-[#4B7BF5] focus:outline-none"
+                      value={lab.scheduledDate}
+                      min={new Date().toISOString().split("T")[0]}
+                      onChange={e => {
+                        const updated = [...suggestedLabTests];
+                        updated[li] = { ...updated[li], scheduledDate: e.target.value };
+                        setSuggestedLabTests(updated);
+                      }}
+                    />
+                  </div>
+                  <div className="sm:col-span-4">
+                    <label className="block text-xs font-semibold text-[#554238] mb-1">Pre-test Notes <span className="text-[#9C8276] font-normal">(optional)</span></label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Fasting required, no prior meds"
+                      className="w-full rounded-lg border border-[#C7D9F8] bg-white px-3 py-2 text-xs focus:border-[#4B7BF5] focus:outline-none"
+                      value={lab.notes}
+                      onChange={e => {
+                        const updated = [...suggestedLabTests];
+                        updated[li] = { ...updated[li], notes: e.target.value };
+                        setSuggestedLabTests(updated);
+                      }}
+                    />
+                  </div>
+                  <div className="sm:col-span-1 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setSuggestedLabTests(suggestedLabTests.filter((_, i) => i !== li))}
+                      className="mt-4 text-red-500 hover:text-red-700 text-sm font-bold"
+                      title="Remove"
+                    >
+                      ✕
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1490,7 +1652,7 @@ export default function DoctorDashboard() {
               columns={[
                 { label: "Date", render: (row) => formatDate(row.generatedAt || row.encounter?.scheduledTime) },
                 { label: "Doctor", render: (row) => fullName(row.encounter?.doctor?.user) },
-                { label: "Diagnosis Summary", render: (row) => row.encounter?.diagnoses?.[0]?.diagnosisText || row.encounter?.diagnosis || "—" },
+                { label: "Diagnosis Summary", render: (row) => row.encounter?.diagnoses?.[0]?.diagnosisText || row.encounter?.diagnosis || row.encounter?.reason || "—" },
                 {
                   label: "Medications",
                   render: (row) => (
@@ -1622,6 +1784,49 @@ export default function DoctorDashboard() {
               { label: "Blood Group", render: (row) => row.bloodGroup || "—" },
               { label: "Chronic Conditions", render: (row) => row.chronicConditions?.join(", ") || "None" },
               {
+                label: "Recorded Vitals",
+                render: (row) => {
+                  const patientEncounters = appointments.filter(enc => enc.patientId === row.patientId);
+                  const allVitals = [];
+                  patientEncounters.forEach(enc => {
+                    if (enc.vitals && enc.vitals.length > 0) {
+                      enc.vitals.forEach(v => {
+                        allVitals.push({
+                          name: v.name || v.vitalType?.name || 'Vital',
+                          value: v.value,
+                          unit: v.unit || v.vitalType?.unit || '',
+                          recordedAt: new Date(v.recordedAt)
+                        });
+                      });
+                    }
+                  });
+
+                  if (allVitals.length === 0) return <span className="text-[#8B7469] italic text-xs">No vitals</span>;
+
+                  allVitals.sort((a, b) => b.recordedAt - a.recordedAt);
+
+                  const seen = new Set();
+                  const uniqueVitals = [];
+                  for (const v of allVitals) {
+                    if (!seen.has(v.name)) {
+                      seen.add(v.name);
+                      uniqueVitals.push(v);
+                    }
+                    if (uniqueVitals.length >= 3) break;
+                  }
+
+                  return (
+                    <div className="flex flex-wrap gap-1 max-w-xs">
+                      {uniqueVitals.map((v, i) => (
+                        <span key={i} className="inline-flex items-center rounded-lg bg-[#FFF1E8] border border-[#F2D7C8] px-2 py-0.5 text-[11px] font-semibold text-[#D97757]" title={`Recorded on ${formatDate(v.recordedAt, true)}`}>
+                          {v.name}: {v.value} {v.unit}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                }
+              },
+              {
                 label: "Management Actions",
                 render: (row) => (
                   <button
@@ -1662,15 +1867,10 @@ export default function DoctorDashboard() {
             {navItems.map((item) => (
               <li key={item}>
                 <button
-                  onClick={() => { setActiveNav(item); setBadges((prev) => ({ ...prev, [item]: 0 })); setIsSidebarOpen(false); setSuccessMsg(""); setManagingPatient(null); setIsPrescriptionFormOpen(false); }}
-                  className={`w-full rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-colors flex justify-between items-center ${activeNav === item && !managingPatient ? "bg-[#FFF1E8] text-[#D97757]" : "text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#3D2010]"}`}
+                  onClick={() => { setActiveNav(item); setIsSidebarOpen(false); setSuccessMsg(""); setManagingPatient(null); setIsPrescriptionFormOpen(false); }}
+                  className={`w-full rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-colors ${activeNav === item && !managingPatient ? "bg-[#FFF1E8] text-[#D97757]" : "text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#3D2010]"}`}
                 >
-                  <span>{item}</span>
-                  {badges[item] > 0 && (
-                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#D97757] px-1.5 text-[10px] font-extrabold text-white leading-none">
-                      {badges[item]}
-                    </span>
-                  )}
+                  {item}
                 </button>
               </li>
             ))}
@@ -1695,6 +1895,80 @@ export default function DoctorDashboard() {
             <p className="text-sm font-bold text-[#3D2010]">{docSpecialization}</p>
           </div>
           <div className="relative flex items-center gap-3">
+            {/* Notification Bell */}
+            <div className="relative">
+              <button 
+                onClick={() => setIsNotificationOpen(!isNotificationOpen)}
+                className="relative rounded-full p-2 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors focus:outline-none"
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                </svg>
+                {unreadCount > 0 && (
+                  <span className="absolute right-1.5 top-1.5 flex h-2.5 w-2.5 rounded-full bg-[#D97757] ring-2 ring-white animate-pulse" />
+                )}
+              </button>
+
+              {isNotificationOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsNotificationOpen(false)} />
+                  <div className="absolute right-0 top-12 z-50 w-80 rounded-2xl border border-[#EEDFD7] bg-white p-3 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between border-b border-[#F3EAE5] pb-2 mb-2">
+                      <span className="text-sm font-bold text-[#3D2010] font-sans">Notifications</span>
+                      {unreadCount > 0 && (
+                        <span className="rounded-full bg-[#FFF1E8] px-2 py-0.5 text-[10px] font-extrabold text-[#D97757] leading-none">
+                          {unreadCount} new
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="max-h-64 overflow-y-auto space-y-2 font-sans pr-1">
+                      {notifications.length === 0 ? (
+                        <div className="py-6 text-center text-xs text-gray-400 italic">
+                          No notifications
+                        </div>
+                      ) : (
+                        notifications.map((n) => (
+                          <div 
+                            key={n.notificationId} 
+                            className={`p-2.5 rounded-xl border transition-colors text-left ${
+                              n.isRead ? "border-gray-50 bg-gray-50/50" : "border-[#FFF1E8] bg-[#FFFBF8]"
+                            }`}
+                          >
+                            <div className="flex justify-between items-start">
+                              <span className={`text-xs font-bold ${n.isRead ? "text-gray-500" : "text-[#3D2010]"}`}>
+                                {n.title}
+                              </span>
+                              {!n.isRead && (
+                                <button 
+                                  onClick={() => markAsRead(n.notificationId)}
+                                  className="text-[10px] font-extrabold text-[#D97757] hover:underline focus:outline-none"
+                                >
+                                  Mark read
+                                </button>
+                              )}
+                            </div>
+                            <p className={`text-[11px] mt-1 leading-relaxed ${n.isRead ? "text-gray-400" : "text-gray-600"}`}>
+                              {n.message}
+                            </p>
+                            <span className="text-[9px] text-gray-400 block mt-1">
+                              {new Date(n.createdAt).toLocaleDateString("en-IN", {
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit"
+                              })}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
             <button 
               onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
               className="flex items-center gap-3 focus:outline-none hover:opacity-90 text-left"

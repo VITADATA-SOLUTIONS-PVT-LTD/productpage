@@ -2,7 +2,7 @@
 
 import React from "react";
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import DashboardCalendar from "@/components/DashboardCalendar";
 
@@ -12,6 +12,7 @@ const navItems = [
   "My Appointments",
   "Medical Records",
   "Medications & Refills",
+  "Payments",
 ];
 
 const apiBaseUrl =
@@ -305,33 +306,101 @@ function LoadingState() {
   );
 }
 
+function StarSelector({ label, value, onChange }) {
+  const [hoverValue, setHoverValue] = useState(null);
+  const activeVal = hoverValue !== null ? hoverValue : value;
+
+  return (
+    <div className="flex items-center justify-between py-3 border-b border-[#F3EAE5] last:border-b-0">
+      <span className="text-sm font-medium text-[#554238]">{label}</span>
+      <div className="flex items-center gap-1">
+        {[1, 2, 3, 4, 5].map((starNum) => {
+          const isFull = activeVal >= starNum;
+          const isHalf = activeVal === starNum - 0.5;
+
+          return (
+            <div 
+              key={starNum} 
+              className="relative w-7 h-7 cursor-pointer"
+              onMouseLeave={() => setHoverValue(null)}
+            >
+              {/* Left half detector */}
+              <div 
+                className="absolute left-0 top-0 w-3.5 h-7 z-20"
+                onClick={() => onChange(starNum - 0.5)}
+                onMouseEnter={() => setHoverValue(starNum - 0.5)}
+              />
+              {/* Right half detector */}
+              <div 
+                className="absolute right-0 top-0 w-3.5 h-7 z-20"
+                onClick={() => onChange(starNum)}
+                onMouseEnter={() => setHoverValue(starNum)}
+              />
+
+              {/* SVG Star Container */}
+              <svg 
+                className="absolute inset-0 w-7 h-7" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                {/* Background Gray Star */}
+                <path 
+                  d="M12 17.27L18.18 21L16.54 13.97L22 9.24L14.81 8.63L12 2L9.19 8.63L2 9.24L7.46 13.97L5.82 21L12 17.27Z" 
+                  fill="#E5E7EB" 
+                />
+                {/* Yellow Star Overlay */}
+                {(isFull || isHalf) && (
+                  <path 
+                    d="M12 17.27L18.18 21L16.54 13.97L22 9.24L14.81 8.63L12 2L9.19 8.63L2 9.24L7.46 13.97L5.82 21L12 17.27Z" 
+                    fill="#F59E0B"
+                    clipPath={isHalf ? "url(#left-half-clip)" : undefined}
+                  />
+                )}
+              </svg>
+            </div>
+          );
+        })}
+        
+        {/* Left Half Clip Path Definition */}
+        <svg width="0" height="0" className="absolute">
+          <defs>
+            <clipPath id="left-half-clip">
+              <rect x="0" y="0" width="12" height="24" />
+            </clipPath>
+          </defs>
+        </svg>
+
+        <span className="text-xs font-bold text-[#D97757] ml-2 w-8 text-right">
+          {activeVal.toFixed(1)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+const loadRazorpayScript = () => {
+  return new Promise((resolve) => {
+    if (window.Razorpay) {
+      resolve(true);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+};
+
 export default function PatientDashboard() {
   const router = useRouter();
   const [activeNav, setActiveNav] = useState("Dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [badges, setBadges] = useState({});
+  const [notifications, setNotifications] = useState([]);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
 
-  useEffect(() => {
-    const initialBadges = {};
-    if (navItems.includes("Pending Requests")) initialBadges["Pending Requests"] = 2;
-    if (navItems.includes("Appointments")) initialBadges["Appointments"] = 1;
-    if (navItems.includes("Appointments Queue")) initialBadges["Appointments Queue"] = 2;
-    if (navItems.includes("Submit Lab Result")) initialBadges["Submit Lab Result"] = 1;
-    if (navItems.includes("Medical Records")) initialBadges["Medical Records"] = 1;
-    setBadges(initialBadges);
 
-    const interval = setInterval(() => {
-      const potentialTabs = navItems.filter(item => item !== "Dashboard" && item !== "Hospital Settings" && item !== "Lab Test Catalog");
-      if (potentialTabs.length === 0) return;
-      const randomTab = potentialTabs[Math.floor(Math.random() * potentialTabs.length)];
-      setBadges(prev => ({
-        ...prev,
-        [randomTab]: (prev[randomTab] || 0) + 1
-      }));
-    }, 25000);
-
-    return () => clearInterval(interval);
-  }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
@@ -349,6 +418,62 @@ export default function PatientDashboard() {
     medications: [],
   });
   const [medDashboard, setMedDashboard] = useState(null);
+  const [invoices, setInvoices] = useState([]);
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [feedbackForm, setFeedbackForm] = useState({
+    encounterId: "",
+    doctorRating: 5,
+    hospitalRating: 5,
+    receptionistRating: 5,
+    comment: ""
+  });
+  const [isTechFeedbackModalOpen, setIsTechFeedbackModalOpen] = useState(false);
+  const [techFeedbackForm, setTechFeedbackForm] = useState({
+    encounterId: "",
+    websiteRating: 5,
+    paymentRating: 5,
+    comment: ""
+  });  const fetchNotifications = useCallback(async () => {
+    const token = localStorage.getItem("patientToken");
+    if (!token) return;
+    try {
+      const res = await fetch(`${apiBaseUrl}/notifications`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const list = await res.json();
+        setNotifications(Array.isArray(list) ? list : []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
+
+  const markAsRead = async (id) => {
+    const token = localStorage.getItem("patientToken");
+    if (!token) return;
+    try {
+      const res = await fetch(`${apiBaseUrl}/notifications/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ isRead: true })
+      });
+      if (res.ok) {
+        setNotifications(prev => prev.map(n => n.notificationId === id ? { ...n, isRead: true } : n));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const unreadCount = notifications.filter(n => !n.isRead).length;
 
   // Form States
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
@@ -413,6 +538,294 @@ export default function PatientDashboard() {
     }
   };
 
+  const handlePayment = async (invoice) => {
+    const resScript = await loadRazorpayScript();
+    if (!resScript) {
+      alert("Razorpay SDK failed to load. Are you online?");
+      return;
+    }
+
+    const token = localStorage.getItem("patientToken");
+    setLoading(true);
+    setError("");
+    setSuccessMsg("");
+
+    try {
+      const res = await fetch(`${apiBaseUrl}/payments/order`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          invoiceId: invoice.invoiceId,
+          amount: Number(invoice.finalAmount),
+          currency: "INR"
+        })
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "Failed to initiate payment");
+      }
+
+      const { payment, order, keyId } = await res.json();
+      const patientName = profile ? `${profile.firstName} ${profile.lastName}` : "Patient";
+
+      const options = {
+        key: keyId || "rzp_test_eWy2N5D5vF6W3t",
+        amount: order.amount,
+        currency: order.currency,
+        name: "VitaData Healthcare",
+        description: `Payment for Invoice ${invoice.invoiceNumber}`,
+        order_id: order.id,
+        handler: async function (response) {
+          setLoading(true);
+          try {
+            const verifyRes = await fetch(`${apiBaseUrl}/payments/verify`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                paymentId: payment.paymentId,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpayOrderId: response.razorpay_order_id,
+                razorpaySignature: response.razorpay_signature
+              })
+            });
+
+            if (verifyRes.ok) {
+              setSuccessMsg("Payment completed successfully!");
+              
+              // Load the tech & payments feedback form
+              const encounterItem = invoice.items?.find(item => item.itemType === "ENCOUNTER");
+              setTechFeedbackForm({
+                encounterId: encounterItem?.itemId || "",
+                websiteRating: 5,
+                paymentRating: 5,
+                comment: ""
+              });
+              setIsTechFeedbackModalOpen(true);
+              
+              await loadData();
+            } else {
+              const errData = await verifyRes.json();
+              throw new Error(errData.message || "Payment verification failed.");
+            }
+          } catch (err) {
+            setError(err.message);
+          } finally {
+            setLoading(false);
+          }
+        },
+        prefill: {
+          name: patientName,
+          email: profile?.email || "",
+          contact: profile?.phoneNumber || ""
+        },
+        theme: {
+          color: "#D97757"
+        }
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFeedbackSubmit = async (e) => {
+    e.preventDefault();
+    const token = localStorage.getItem("patientToken");
+    if (!token || !apiBaseUrl) return;
+
+    setSubmitting(true);
+    setError("");
+    setSuccessMsg("");
+    try {
+      const res = await fetch(`${apiBaseUrl}/feedback`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          encounterId: feedbackForm.encounterId,
+          doctorRating: feedbackForm.doctorRating,
+          hospitalRating: feedbackForm.hospitalRating,
+          receptionistRating: feedbackForm.receptionistRating,
+          comment: feedbackForm.comment
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.message || "Failed to submit feedback");
+      }
+
+      setSuccessMsg("Clinical feedback submitted successfully! Thank you.");
+      setIsFeedbackModalOpen(false);
+      
+      // Set skip/prompted flag in localStorage so it is never shown again
+      localStorage.setItem('feedback_completed_prompted_' + feedbackForm.encounterId, 'true');
+      await loadData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleTechFeedbackSubmit = async (e) => {
+    e.preventDefault();
+    const token = localStorage.getItem("patientToken");
+    if (!token || !apiBaseUrl) return;
+
+    setSubmitting(true);
+    setError("");
+    setSuccessMsg("");
+    try {
+      const res = await fetch(`${apiBaseUrl}/feedback`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          encounterId: techFeedbackForm.encounterId,
+          websiteRating: techFeedbackForm.websiteRating,
+          paymentRating: techFeedbackForm.paymentRating,
+          comment: techFeedbackForm.comment
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.message || "Failed to submit feedback");
+      }
+
+      setSuccessMsg("Technical feedback submitted successfully! Thank you.");
+      setIsTechFeedbackModalOpen(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const renderPayments = () => {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <SectionHeader title="My Invoices & Payments" description="Pay consultation fees online via Razorpay and download printable receipts." />
+        {invoices.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[#EEDFD7] bg-white p-8 text-center text-sm text-[#9C8276]">
+            No billing or invoice details found.
+          </div>
+        ) : (
+          <div className="grid gap-6 sm:grid-cols-2">
+            {invoices.map((invoice) => {
+              const encounterItem = invoice.items?.find(item => item.itemType === "ENCOUNTER");
+              const doctorName = encounterItem?.encounter?.doctor?.user 
+                ? `Dr. ${encounterItem.encounter.doctor.user.firstName} ${encounterItem.encounter.doctor.user.lastName}`
+                : "Healthcare Specialist";
+              const scheduledTime = encounterItem?.encounter?.scheduledTime;
+              const isPaid = invoice.status === "PAID";
+              
+              return (
+                <div 
+                  key={invoice.invoiceId} 
+                  className={`group relative overflow-hidden rounded-2xl border bg-gradient-to-br from-[#FFFDFB] to-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md ${
+                    isPaid ? "border-emerald-100" : "border-[#F2D7C8]"
+                  }`}
+                >
+                  {/* Decorative top border gradient */}
+                  <div className={`absolute top-0 left-0 right-0 h-1.5 ${
+                    isPaid ? "bg-emerald-500" : "bg-gradient-to-r from-[#D97757] to-[#F0CDBB]"
+                  }`} />
+                  
+                  <div className="flex justify-between items-start mb-4 mt-1">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#9C8276]">Invoice</span>
+                      <h3 className="text-base font-bold text-[#3D2010] mt-0.5">{invoice.invoiceNumber}</h3>
+                    </div>
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.05em] ${
+                      isPaid 
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700" 
+                        : "border-amber-200 bg-amber-50 text-amber-700"
+                    }`}>
+                      {isPaid ? "Paid" : "Pending Payment"}
+                    </span>
+                  </div>
+                  
+                  <div className="space-y-3 border-t border-b border-[#F3EAE5] py-4 my-4">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-[#8B7469]">Service / Consultation</span>
+                      <span className="font-semibold text-[#3D2010] text-right">{doctorName}</span>
+                    </div>
+                    {scheduledTime && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-[#8B7469]">Appointment Date</span>
+                        <span className="text-[#554238]">{formatDate(scheduledTime, true)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-xs pt-1">
+                      <span className="text-[#8B7469]">Consultation Fee</span>
+                      <span className="text-[#554238]">₹{Number(invoice.totalAmount).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-[#8B7469]">GST (10%)</span>
+                      <span className="text-[#554238]">₹{Number(invoice.taxAmount).toFixed(2)}</span>
+                    </div>
+                    {Number(invoice.discountAmount) > 0 && (
+                      <div className="flex justify-between text-xs text-emerald-600">
+                        <span>Discount</span>
+                        <span>-₹{Number(invoice.discountAmount).toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center justify-between mt-4">
+                    <div>
+                      <span className="text-[10px] text-[#9C8276] block">Total Amount</span>
+                      <span className={`text-xl font-black ${isPaid ? "text-emerald-600" : "text-[#D97757]"}`}>₹{Number(invoice.finalAmount).toFixed(2)}</span>
+                    </div>
+                    
+                    {isPaid ? (
+                      <button
+                        onClick={() => handleDownloadPDF("invoice", invoice)}
+                        className="rounded-xl bg-white hover:bg-emerald-50 border border-emerald-200 text-emerald-700 px-5 py-2.5 text-xs font-bold transition-all duration-300 shadow-sm hover:shadow flex items-center gap-2 active:scale-95"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        View Invoice
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handlePayment(invoice)}
+                        className="rounded-xl bg-[#3D2010] hover:bg-[#D97757] text-white px-5 py-2.5 text-xs font-bold transition-all duration-300 shadow-sm hover:shadow active:scale-95 flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                        Pay Now
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const [selectedSpecialty, setSelectedSpecialty] = useState("");
   const [selectedHospitalId, setSelectedHospitalId] = useState("");
   const [bookingForm, setBookingForm] = useState({
@@ -455,81 +868,126 @@ export default function PatientDashboard() {
     setError("");
 
     try {
-      // 1. Profile Info (cached)
-      const cachedProfile = getCachedItem("patient_cached_profile");
-      let currentProfile = cachedProfile;
-      if (!currentProfile) {
-        const profileRes = await fetch(`${apiBaseUrl}/users/myinfo`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (profileRes.ok) {
-          const profileData = await profileRes.json();
-          currentProfile = profileData.data;
-          setCachedItem("patient_cached_profile", currentProfile);
-        }
-      }
-      setProfile(currentProfile);
+      await Promise.all([
+        (async () => {
+          // 1. Profile Info (cached)
+          const cachedProfile = getCachedItem("patient_cached_profile");
+          let currentProfile = cachedProfile;
+          if (!currentProfile) {
+            const profileRes = await fetch(`${apiBaseUrl}/users/myinfo`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (profileRes.ok) {
+              const profileData = await profileRes.json();
+              currentProfile = profileData.data;
+              setCachedItem("patient_cached_profile", currentProfile);
+            }
+          }
+          setProfile(currentProfile);
+        })(),
 
-      // 2. Mobile Patient Hospitals (cached)
-      const cachedHospitals = getCachedItem("patient_cached_hospitals");
-      let currentHospitals = cachedHospitals || [];
-      if (!cachedHospitals) {
-        const hospitalsRes = await fetch(`${apiBaseUrl}/mobile/patient/hospitals`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (hospitalsRes.ok) {
-          const hospData = await hospitalsRes.json();
-          currentHospitals = hospData.data || [];
-          setCachedItem("patient_cached_hospitals", currentHospitals);
-        }
-      }
-      setHospitals(currentHospitals);
+        (async () => {
+          // 2. Mobile Patient Hospitals (cached)
+          const cachedHospitals = getCachedItem("patient_cached_hospitals");
+          let currentHospitals = cachedHospitals || [];
+          if (!cachedHospitals) {
+            const hospitalsRes = await fetch(`${apiBaseUrl}/mobile/patient/hospitals`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (hospitalsRes.ok) {
+              const hospData = await hospitalsRes.json();
+              currentHospitals = hospData.data || [];
+              setCachedItem("patient_cached_hospitals", currentHospitals);
+            }
+          }
+          setHospitals(currentHospitals);
+        })(),
 
-      // 3. Mobile Patient Doctors (cached)
-      const cachedDoctors = getCachedItem("patient_cached_doctors");
-      let currentDoctors = cachedDoctors || [];
-      if (!cachedDoctors) {
-        const doctorsRes = await fetch(`${apiBaseUrl}/mobile/patient/doctors`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (doctorsRes.ok) {
-          const docData = await doctorsRes.json();
-          currentDoctors = docData.data || [];
-          setCachedItem("patient_cached_doctors", currentDoctors);
-        }
-      }
-      setDoctors(currentDoctors);
+        (async () => {
+          // 3. Mobile Patient Doctors (cached)
+          const cachedDoctors = getCachedItem("patient_cached_doctors");
+          let currentDoctors = cachedDoctors || [];
+          if (!cachedDoctors) {
+            const doctorsRes = await fetch(`${apiBaseUrl}/mobile/patient/doctors`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (doctorsRes.ok) {
+              const docData = await doctorsRes.json();
+              currentDoctors = docData.data || [];
+              setCachedItem("patient_cached_doctors", currentDoctors);
+            }
+          }
+          setDoctors(currentDoctors);
+        })(),
 
-      // 4. Mobile Patient Records (dynamic)
-      const recordsRes = await fetch(`${apiBaseUrl}/mobile/patient/records`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (recordsRes.ok) {
-        const recData = await recordsRes.json();
-        const activeRecs = recData.data || { appointments: [], prescriptions: [], labReports: [], medications: [] };
-        setRecords(activeRecs);
-        setAppointments(activeRecs.appointments || []);
-      }
+        (async () => {
+          // 4. Mobile Patient Records (dynamic)
+          const recordsRes = await fetch(`${apiBaseUrl}/mobile/patient/records`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (recordsRes.ok) {
+            const recData = await recordsRes.json();
+            const activeRecs = recData.data || { appointments: [], prescriptions: [], labReports: [], medications: [] };
+            setRecords(activeRecs);
+            setAppointments(activeRecs.appointments || []);
+          }
+        })(),
 
-      // 5. Medications Dashboard (dynamic)
-      const medRes = await fetch(`${apiBaseUrl}/mobile/patient/medications/dashboard`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (medRes.ok) {
-        const medData = await medRes.json();
-        setMedDashboard(medData.data || null);
-      }
+        (async () => {
+          // 5. Medications Dashboard (dynamic)
+          const medRes = await fetch(`${apiBaseUrl}/mobile/patient/medications/dashboard`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (medRes.ok) {
+            const medData = await medRes.json();
+            setMedDashboard(medData.data || null);
+          }
+        })(),
 
+        (async () => {
+          // 6. Invoices (dynamic)
+          const invoicesRes = await fetch(`${apiBaseUrl}/mobile/patient/invoices`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (invoicesRes.ok) {
+            const invData = await invoicesRes.json();
+            setInvoices(invData.data || []);
+          }
+        })(),
+
+        fetchNotifications()
+      ]);
     } catch (requestError) {
       setError(requestError.message || "Failed to load patient records");
     } finally {
       setLoading(false);
     }
-  }, [logout]);
+  }, [logout, fetchNotifications]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Trigger Clinical Feedback Modal on load for recently completed appointment
+  useEffect(() => {
+    if (appointments && appointments.length > 0) {
+      const completedEncounter = appointments.find(appt => appt.status === 'COMPLETED');
+      if (completedEncounter) {
+        const encId = completedEncounter.id || completedEncounter.encounterId;
+        const prompted = localStorage.getItem('feedback_completed_prompted_' + encId);
+        if (!prompted) {
+          setFeedbackForm({
+            encounterId: encId,
+            doctorRating: 5,
+            hospitalRating: 5,
+            receptionistRating: 5,
+            comment: ""
+          });
+          setIsFeedbackModalOpen(true);
+        }
+      }
+    }
+  }, [appointments]);
 
   useEffect(() => {
     const token = localStorage.getItem("patientToken");
@@ -628,6 +1086,33 @@ export default function PatientDashboard() {
     if (!selectedSpecialty || !selectedHospitalId) return [];
     return doctors.filter(doc => doc.specialty === selectedSpecialty && doc.hospitalId === selectedHospitalId);
   }, [selectedSpecialty, selectedHospitalId, doctors]);
+
+  const handleCancelAppointment = async (encounterId) => {
+    const confirmCancel = window.confirm("Are you sure you want to cancel this appointment?");
+    if (!confirmCancel) return;
+
+    const token = localStorage.getItem("patientToken");
+    setLoading(true);
+    setError("");
+    setSuccessMsg("");
+
+    try {
+      const res = await fetch(`${apiBaseUrl}/encounters/${encounterId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || "Failed to cancel appointment");
+      }
+      setSuccessMsg("Appointment cancelled successfully!");
+      await loadData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Actions
   const handleBookAppointment = async (e) => {
@@ -808,67 +1293,322 @@ export default function PatientDashboard() {
     
     let html = "";
     if (type === "prescription") {
+      const diagnosesList = data.encounter?.diagnoses || [];
+      const diagnosisSummaryText = diagnosesList.length > 0
+        ? diagnosesList.map(d => d.diagnosisText).filter(Boolean).join(", ")
+        : (data.encounter?.diagnosis || data.encounter?.reason || "—");
+
+      const symptomsText = diagnosesList.length > 0
+        ? diagnosesList.map(d => d.symptoms).filter(Boolean).join("; ")
+        : (data.encounter?.chiefComplaint || data.encounter?.reason || "—");
+
       html = `
         <html>
         <head>
           <title>Prescription - ${patientName}</title>
           <style>
-            body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 40px; color: #3D2010; }
-            .header { display: flex; justify-content: space-between; border-bottom: 2px solid #3D2010; padding-bottom: 20px; margin-bottom: 30px; }
-            .logo { font-size: 24px; font-weight: bold; color: #D97757; }
-            .doc-info { text-align: right; }
-            .section { margin-bottom: 25px; }
-            .section-title { font-size: 16px; font-weight: bold; color: #3D2010; border-bottom: 1px solid #EEDFD7; padding-bottom: 5px; margin-bottom: 10px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-            th { border-bottom: 2px solid #EEDFD7; text-align: left; padding: 8px; font-size: 14px; color: #6B554A; }
-            td { padding: 10px 8px; border-bottom: 1px solid #F3EAE5; font-size: 13px; }
-            .footer { margin-top: 50px; text-align: center; font-size: 11px; color: #9C8276; border-top: 1px solid #EEDFD7; padding-top: 15px; }
+            @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+            
+            body { 
+              font-family: 'Outfit', 'Helvetica Neue', Arial, sans-serif; 
+              padding: 50px; 
+              color: #3D2010; 
+              background-color: #ffffff;
+              line-height: 1.6;
+            }
+            
+            .header-container { 
+              display: flex; 
+              justify-content: space-between; 
+              align-items: center;
+              border-bottom: 2px solid #EEDFD7; 
+              padding-bottom: 30px; 
+              margin-bottom: 40px; 
+            }
+            
+            .brand-section {
+              display: flex;
+              align-items: center;
+              gap: 15px;
+            }
+            
+            .logo-img {
+              height: 55px;
+              width: auto;
+              object-fit: contain;
+            }
+            
+            .brand-details h1 {
+              font-size: 24px;
+              font-weight: 800;
+              color: #D97757;
+              margin: 0;
+              letter-spacing: -0.02em;
+            }
+            
+            .brand-details p {
+              margin: 3px 0 0 0;
+              font-size: 13px;
+              color: #8B7469;
+              font-weight: 500;
+              text-transform: uppercase;
+              letter-spacing: 0.05em;
+            }
+            
+            .clinic-info { 
+              text-align: right; 
+            }
+            
+            .clinic-info h3 { 
+              margin: 0; 
+              font-size: 18px; 
+              font-weight: 700;
+              color: #3D2010;
+            }
+            
+            .clinic-info .specialty { 
+              margin: 4px 0 0 0; 
+              font-size: 13px; 
+              color: #D97757; 
+              font-weight: 600;
+              text-transform: uppercase;
+              letter-spacing: 0.05em;
+            }
+            
+            .clinic-info .hospital {
+              margin: 4px 0 0 0;
+              font-size: 13px;
+              color: #8B7469;
+              font-weight: 400;
+            }
+
+            .info-grid {
+              display: grid;
+              grid-template-columns: 1.2fr 1fr;
+              gap: 40px;
+              margin-bottom: 40px;
+              background-color: #FFFDFB;
+              border: 1px solid #F2D7C8;
+              border-radius: 16px;
+              padding: 24px;
+            }
+            
+            .info-block p {
+              margin: 8px 0;
+              font-size: 14px;
+              color: #554238;
+            }
+            
+            .info-block strong {
+              color: #3D2010;
+              font-weight: 600;
+            }
+            
+            .section { 
+              margin-bottom: 35px; 
+            }
+            
+            .section-title { 
+              font-size: 15px; 
+              font-weight: 700; 
+              color: #D97757; 
+              text-transform: uppercase;
+              letter-spacing: 0.08em;
+              border-bottom: 1.5px solid #F2D7C8; 
+              padding-bottom: 8px; 
+              margin-bottom: 16px; 
+            }
+
+            .vitals-grid {
+              display: flex;
+              flex-wrap: wrap;
+              gap: 12px;
+              margin-top: 10px;
+            }
+
+            .vital-card {
+              background-color: #FFF5F0;
+              border: 1px solid #FBE5D8;
+              border-radius: 10px;
+              padding: 8px 16px;
+              font-size: 13px;
+              color: #3D2010;
+              display: flex;
+              align-items: center;
+              gap: 6px;
+            }
+
+            .vital-card strong {
+              color: #D97757;
+            }
+
+            .meds-table { 
+              width: 100%; 
+              border-collapse: separate; 
+              border-spacing: 0;
+              margin-top: 15px; 
+              border: 1px solid #EEDFD7;
+              border-radius: 12px;
+              overflow: hidden;
+            }
+            
+            .meds-table th { 
+              background-color: #FFF9F5;
+              border-bottom: 1.5px solid #EEDFD7; 
+              text-align: left; 
+              padding: 14px 18px; 
+              font-size: 13px; 
+              font-weight: 700;
+              color: #806B61; 
+              text-transform: uppercase;
+              letter-spacing: 0.05em;
+            }
+            
+            .meds-table td { 
+              padding: 16px 18px; 
+              border-bottom: 1px solid #F3EAE5; 
+              font-size: 14px; 
+              color: #3D2010;
+            }
+            
+            .meds-table tr:last-child td {
+              border-bottom: none;
+            }
+            
+            .med-name {
+              font-weight: 700;
+              color: #3D2010;
+            }
+
+            .sig-section {
+              margin-top: 60px;
+              display: flex;
+              justify-content: flex-end;
+            }
+
+            .sig-box {
+              text-align: center;
+              width: 200px;
+            }
+
+            .sig-image {
+              max-height: 70px;
+              width: auto;
+              margin-bottom: 8px;
+            }
+
+            .sig-line {
+              border-top: 1px solid #8B7469;
+              padding-top: 8px;
+              font-size: 13px;
+              font-weight: 600;
+              color: #554238;
+            }
+            
+            .footer { 
+              margin-top: 80px; 
+              text-align: center; 
+              font-size: 11px; 
+              color: #9C8276; 
+              border-top: 1px solid #EEDFD7; 
+              padding-top: 20px; 
+            }
           </style>
         </head>
         <body>
-          <div class="header">
-            <div>
-              <div class="logo">VitaData Healthcare</div>
-              <p style="margin: 5px 0 0 0; font-size: 13px; color: #6B554A;">Patient Medical Record</p>
+          <div class="header-container">
+            <div class="brand-section">
+              <img src="${window.location.origin}/logo.png" class="logo-img" alt="VitaData Logo" onerror="this.style.display='none'" />
+              <div class="brand-details">
+                <h1>VitaData Healthcare</h1>
+                <p>Patient Medical Record</p>
+              </div>
             </div>
-            <div class="doc-info">
-              <h3 style="margin: 0;">Dr. ${data.encounter?.doctor?.name || "Clinician"}</h3>
-              <p style="margin: 5px 0 0 0; font-size: 12px; color: #6B554A;">${data.encounter?.doctor?.specialization || "General Medicine"}</p>
-            </div>
-          </div>
-          <div class="section" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-            <div>
-              <strong>Patient Name:</strong> ${patientName}<br>
-              <strong>Date of Birth:</strong> ${dob}<br>
-              <strong>Gender:</strong> ${gender}
-            </div>
-            <div style="text-align: right;">
-              <strong>Prescription ID:</strong> ${data.id || "—"}<br>
-              <strong>Date Issued:</strong> ${formatDate(data.generatedAt)}<br>
-              <strong>Next Follow-up:</strong> ${formatDate(data.nextVisit)}
+            <div class="clinic-info">
+              <h3>Dr. ${data.encounter?.doctor?.name || "Clinician"}</h3>
+              <div class="specialty">${data.encounter?.doctor?.specialty || data.encounter?.doctor?.specialization || "General Medicine"}</div>
+              <div class="hospital">${data.encounter?.hospital?.name || "VitaData Hospital"}</div>
             </div>
           </div>
+
+          <div class="info-grid">
+            <div class="info-block">
+              <p><strong>Patient Name:</strong> ${patientName}</p>
+              <p><strong>Date of Birth:</strong> ${dob}</p>
+              <p><strong>Gender:</strong> <span style="text-transform: capitalize;">${gender}</span></p>
+            </div>
+            <div class="info-block" style="text-align: right;">
+              <p><strong>Prescription ID:</strong> <span style="font-family: monospace; font-size: 12px;">${data.id || "—"}</span></p>
+              <p><strong>Date Issued:</strong> ${formatDate(data.generatedAt)}</p>
+              <p><strong>Next Follow-up:</strong> ${formatDate(data.nextVisit)}</p>
+            </div>
+          </div>
+
+          <!-- Vitals Section -->
+          ${data.encounter?.vitals && data.encounter.vitals.length > 0 ? `
+            <div class="section">
+              <div class="section-title">Recorded Vitals</div>
+              <div class="vitals-grid">
+                ${data.encounter.vitals.map(v => `
+                  <div class="vital-card">
+                    <strong>${v.name || v.vitalType?.name || "Vital"}:</strong>
+                    <span>${v.value} ${v.unit || v.vitalType?.unit || ""}</span>
+                  </div>
+                `).join("")}
+              </div>
+            </div>
+          ` : ""}
+
+          <!-- Suggested Lab Tests -->
+          ${data.encounter?.labResults && data.encounter.labResults.length > 0 ? `
+            <div class="section">
+              <div class="section-title">Suggested Lab Tests</div>
+              <table class="meds-table">
+                <thead>
+                  <tr>
+                    <th style="width:40%;">Test Name</th>
+                    <th style="width:20%;">Status</th>
+                    <th style="width:40%;">Pre-test Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${data.encounter.labResults.map(r => `
+                    <tr>
+                      <td><span class="med-name">${r.testName || "Lab Test"}</span></td>
+                      <td>${r.resultValue != null ? r.resultValue : "<em style='color:#9C8276;'>Pending</em>"}</td>
+                      <td>${r.remarks || "—"}</td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            </div>
+          ` : ""}
           
           <div class="section">
-            <div class="section-title">Clinical Indication</div>
-            <p><strong>Chief Symptoms / Diagnosis Summary:</strong> ${data.encounter?.diagnosis || "Consultation Checkup"}</p>
+            <div class="section-title">Clinical Indication & Diagnosis</div>
+            <p style="font-size: 14.5px; color: #554238;">
+              <strong>Symptoms / chief complaint:</strong> ${symptomsText}<br>
+              <span style="display: block; margin-top: 8px;">
+                <strong>Diagnosis Summary:</strong> ${diagnosisSummaryText}
+              </span>
+            </p>
           </div>
 
           <div class="section">
             <div class="section-title">Prescribed Medications</div>
-            <table>
+            <table class="meds-table">
               <thead>
                 <tr>
-                  <th>Medicine</th>
-                  <th>Dosage</th>
-                  <th>Intake Frequency</th>
-                  <th>Duration</th>
+                  <th style="width: 40%;">Medicine</th>
+                  <th style="width: 15%;">Dosage</th>
+                  <th style="width: 30%;">Intake Frequency</th>
+                  <th style="width: 15%;">Duration</th>
                 </tr>
               </thead>
               <tbody>
                 ${(data.medicines || []).map(m => `
                   <tr>
-                    <td><strong>${m.name || "Medicine"}</strong></td>
+                    <td><span class="med-name">${m.name || "Medicine"}</span></td>
                     <td>${m.dosage || "—"}</td>
                     <td>${m.frequency || "—"}</td>
                     <td>${m.durationDays || "—"} days</td>
@@ -876,6 +1616,27 @@ export default function PatientDashboard() {
                 `).join("")}
               </tbody>
             </table>
+          </div>
+
+          <!-- Clinical Advice / Notes -->
+          ${data.encounter?.notes ? `
+            <div class="section">
+              <div class="section-title">Advice & Clinical Notes</div>
+              <p style="font-size: 14px; color: #554238; white-space: pre-wrap; background-color: #FAFAFA; padding: 16px; border-radius: 12px; border: 1px solid #EEDFD7;">${data.encounter.notes}</p>
+            </div>
+          ` : ""}
+
+          <!-- Doctor Signature -->
+          <div class="sig-section">
+            <div class="sig-box">
+              ${data.encounter?.doctor?.signatureUrl ? `
+                <img src="${data.encounter.doctor.signatureUrl}" class="sig-image" alt="Doctor Signature" />
+              ` : `
+                <div style="height: 50px;"></div>
+              `}
+              <div class="sig-line">Dr. ${data.encounter?.doctor?.name || "Clinician"}</div>
+              <div style="font-size: 11px; color: #8B7469; margin-top: 2px;">Authorized Signatory</div>
+            </div>
           </div>
           
           <div class="footer">
@@ -946,6 +1707,136 @@ export default function PatientDashboard() {
           
           <div class="footer">
             <p>This is an official laboratory report generated from VitaData Healthcare.</p>
+          </div>
+          <script>
+            window.onload = function() {
+              window.print();
+              setTimeout(function() { window.close(); }, 1000);
+            }
+          </script>
+        </body>
+        </html>
+      `;
+    } else if (type === "invoice") {
+      const encounterItem = data.items?.find(item => item.itemType === "ENCOUNTER");
+      const doctorName = encounterItem?.encounter?.doctor?.user 
+        ? `Dr. ${encounterItem.encounter.doctor.user.firstName} ${encounterItem.encounter.doctor.user.lastName}`
+        : "Healthcare Specialist";
+      const specialization = encounterItem?.encounter?.doctor?.specialization || "General Medicine";
+      const hospitalName = encounterItem?.encounter?.hospital?.name || "VitaData Hospital";
+      const patientFullName = data.patient?.user ? `${data.patient.user.firstName} ${data.patient.user.lastName}` : patientName;
+      
+      html = `
+        <html>
+        <head>
+          <title>Invoice - ${data.invoiceNumber}</title>
+          <style>
+            body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 40px; color: #3D2010; line-height: 1.5; }
+            .header { display: flex; justify-content: space-between; border-bottom: 2px solid #3D2010; padding-bottom: 20px; margin-bottom: 30px; }
+            .logo { font-size: 24px; font-weight: bold; color: #D97757; }
+            .hosp-info { text-align: right; }
+            .section { margin-bottom: 25px; }
+            .section-title { font-size: 16px; font-weight: bold; color: #3D2010; border-bottom: 1px solid #EEDFD7; padding-bottom: 5px; margin-bottom: 15px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+            th { border-bottom: 2px solid #EEDFD7; text-align: left; padding: 10px 8px; font-size: 14px; color: #6B554A; }
+            td { padding: 12px 8px; border-bottom: 1px solid #F3EAE5; font-size: 13px; }
+            .total-row td { border-bottom: none; font-weight: bold; font-size: 14px; padding-top: 15px; }
+            .grand-total { color: #D97757; font-size: 18px !important; }
+            .badge { display: inline-block; padding: 4px 10px; font-size: 11px; font-weight: bold; border-radius: 4px; text-transform: uppercase; }
+            .badge-paid { background-color: #E6F4EA; color: #137333; }
+            .footer { margin-top: 60px; text-align: center; font-size: 11px; color: #9C8276; border-top: 1px solid #EEDFD7; padding-top: 15px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <div class="logo">VitaData Healthcare</div>
+              <p style="margin: 5px 0 0 0; font-size: 13px; color: #6B554A;">Official Payment Receipt</p>
+            </div>
+            <div class="hosp-info">
+              <h3 style="margin: 0;">${hospitalName}</h3>
+              <p style="margin: 5px 0 0 0; font-size: 12px; color: #6B554A;">Invoice: ${data.invoiceNumber}</p>
+              <p style="margin: 3px 0 0 0; font-size: 12px; color: #6B554A;">Status: <span class="badge badge-paid">${data.status}</span></p>
+            </div>
+          </div>
+          
+          <div class="section" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div>
+              <strong style="color: #6B554A; font-size: 12px; text-transform: uppercase;">Billed To:</strong><br>
+              <span style="font-size: 15px; font-weight: bold; color: #3D2010;">${patientFullName}</span><br>
+              <strong>Gender:</strong> ${gender}<br>
+              <strong>Date of Birth:</strong> ${dob}
+            </div>
+            <div style="text-align: right;">
+              <strong style="color: #6B554A; font-size: 12px; text-transform: uppercase;">Invoice Details:</strong><br>
+              <strong>Issued Date:</strong> ${formatDate(data.generatedAt)}<br>
+              <strong>Payment Date:</strong> ${data.paidDate ? formatDate(data.paidDate, true) : formatDate(new Date(), true)}<br>
+              <strong>Payment Mode:</strong> Online (Razorpay Gateway)
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Billing Breakdown</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Description</th>
+                  <th style="text-align: right;">Quantity</th>
+                  <th style="text-align: right;">Unit Price</th>
+                  <th style="text-align: right;">Total Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${data.items && data.items.length > 0 ? data.items.map(item => `
+                  <tr>
+                    <td>
+                      <strong>${item.description || "Medical Service"}</strong><br>
+                      <span style="font-size: 11px; color: #8B7469;">Referenced to ${doctorName} (${specialization})</span>
+                    </td>
+                    <td style="text-align: right;">${item.quantity || 1}</td>
+                    <td style="text-align: right;">₹${Number(item.unitPrice || data.totalAmount).toFixed(2)}</td>
+                    <td style="text-align: right;">₹${Number(item.totalPrice || data.totalAmount).toFixed(2)}</td>
+                  </tr>
+                `).join('') : `
+                  <tr>
+                    <td>
+                      <strong>Doctor Consultation Fee</strong><br>
+                      <span style="font-size: 11px; color: #8B7469;">Referenced to ${doctorName} (${specialization})</span>
+                    </td>
+                    <td style="text-align: right;">1</td>
+                    <td style="text-align: right;">₹${Number(data.totalAmount).toFixed(2)}</td>
+                    <td style="text-align: right;">₹${Number(data.totalAmount).toFixed(2)}</td>
+                  </tr>
+                `}
+                
+                <tr class="total-row" style="border-top: 2px solid #F3EAE5;">
+                  <td colspan="2"></td>
+                  <td style="text-align: right; color: #8B7469;">Subtotal:</td>
+                  <td style="text-align: right; color: #3D2010;">₹${Number(data.totalAmount).toFixed(2)}</td>
+                </tr>
+                <tr class="total-row">
+                  <td colspan="2"></td>
+                  <td style="text-align: right; color: #8B7469;">Tax (GST 10%):</td>
+                  <td style="text-align: right; color: #3D2010;">₹${Number(data.taxAmount || 0).toFixed(2)}</td>
+                </tr>
+                ${Number(data.discountAmount) > 0 ? `
+                  <tr class="total-row" style="color: #137333;">
+                    <td colspan="2"></td>
+                    <td style="text-align: right;">Discount:</td>
+                    <td style="text-align: right;">-₹${Number(data.discountAmount).toFixed(2)}</td>
+                  </tr>
+                ` : ''}
+                <tr class="total-row grand-total">
+                  <td colspan="2"></td>
+                  <td style="text-align: right; color: #3D2010;">Grand Total:</td>
+                  <td style="text-align: right;" class="grand-total">₹${Number(data.finalAmount).toFixed(2)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          <div class="footer">
+            <p>Thank you for choosing VitaData Healthcare. This is a computer-generated tax invoice and requires no physical signature.</p>
           </div>
           <script>
             window.onload = function() {
@@ -1166,6 +2057,7 @@ export default function PatientDashboard() {
     const views = {
       Dashboard: renderOverview(),
       "Book Appointment": renderBookAppointment(),
+      Payments: renderPayments(),
       "My Appointments": (
         <>
           <SectionHeader description="Log of all appointments booked by you." />
@@ -1179,7 +2071,38 @@ export default function PatientDashboard() {
               { label: "Hospital Location", render: (row) => row.hospital?.name || "—" },
               { label: "Scheduled At", render: (row) => formatDate(row.scheduledTime, true) },
               { label: "Reason", render: (row) => row.reason || "General Checkup" },
+              {
+                label: "Recorded Vitals",
+                render: (row) => {
+                  const vList = row.vitals || [];
+                  if (vList.length === 0) return <span className="text-[#8B7469] italic text-xs">No vitals</span>;
+                  return (
+                    <div className="flex flex-wrap gap-1">
+                      {vList.map((v, i) => (
+                        <span key={i} className="inline-flex items-center rounded-lg bg-[#FFF1E8] border border-[#F2D7C8] px-2 py-0.5 text-[11px] font-semibold text-[#D97757]">
+                          {v.name}: {v.value} {v.unit}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                }
+              },
               { label: "Status", render: (row) => <StatusBadge value={row.status} /> },
+              {
+                label: "Actions",
+                render: (row) => {
+                  const canCancel = row.status === "SCHEDULED" || row.status === "CONFIRMED" || row.status === "RESCHEDULED";
+                  if (!canCancel) return "—";
+                  return (
+                    <button
+                      onClick={() => handleCancelAppointment(row.id || row.encounterId)}
+                      className="rounded-lg bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 px-2.5 py-1 text-xs font-semibold transition-colors focus:outline-none"
+                    >
+                      Cancel
+                    </button>
+                  );
+                }
+              },
             ]}
           />
         </>
@@ -1195,7 +2118,7 @@ export default function PatientDashboard() {
               columns={[
                 { label: "Issued Date", render: (row) => formatDate(row.generatedAt || row.encounter?.scheduledTime) },
                 { label: "Doctor Name", render: (row) => row.encounter?.doctor?.name || "Clinical staff" },
-                { label: "Diagnosis Summary", render: (row) => row.encounter?.diagnoses?.[0]?.diagnosisText || row.encounter?.diagnosis || "—" },
+                { label: "Diagnosis Summary", render: (row) => row.encounter?.diagnoses?.[0]?.diagnosisText || row.encounter?.diagnosis || row.encounter?.reason || "—" },
                 {
                   label: "Prescribed Medicines",
                   render: (row) => (
@@ -1336,15 +2259,10 @@ export default function PatientDashboard() {
             {navItems.map((item) => (
               <li key={item}>
                 <button
-                  onClick={() => { setActiveNav(item); setBadges((prev) => ({ ...prev, [item]: 0 })); setIsSidebarOpen(false); setSuccessMsg(""); }}
-                  className={`w-full rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-colors flex justify-between items-center ${activeNav === item ? "bg-[#FFF1E8] text-[#D97757]" : "text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#3D2010]"}`}
+                  onClick={() => { setActiveNav(item); setIsSidebarOpen(false); setSuccessMsg(""); }}
+                  className={`w-full rounded-xl px-4 py-2.5 text-left text-sm font-medium transition-colors ${activeNav === item ? "bg-[#FFF1E8] text-[#D97757]" : "text-[#806B61] hover:bg-[#FFF9F5] hover:text-[#3D2010]"}`}
                 >
-                  <span>{item}</span>
-                  {badges[item] > 0 && (
-                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#D97757] px-1.5 text-[10px] font-extrabold text-white leading-none">
-                      {badges[item]}
-                    </span>
-                  )}
+                  {item}
                 </button>
               </li>
             ))}
@@ -1369,6 +2287,80 @@ export default function PatientDashboard() {
             <p className="text-sm font-bold text-[#3D2010]">VitaData Health Portal</p>
           </div>
           <div className="relative flex items-center gap-3">
+            {/* Notification Bell */}
+            <div className="relative">
+              <button 
+                onClick={() => setIsNotificationOpen(!isNotificationOpen)}
+                className="relative rounded-full p-2 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors focus:outline-none"
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                </svg>
+                {unreadCount > 0 && (
+                  <span className="absolute right-1.5 top-1.5 flex h-2.5 w-2.5 rounded-full bg-[#D97757] ring-2 ring-white animate-pulse" />
+                )}
+              </button>
+
+              {isNotificationOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsNotificationOpen(false)} />
+                  <div className="absolute right-0 top-12 z-50 w-80 rounded-2xl border border-[#EEDFD7] bg-white p-3 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between border-b border-[#F3EAE5] pb-2 mb-2">
+                      <span className="text-sm font-bold text-[#3D2010] font-sans">Notifications</span>
+                      {unreadCount > 0 && (
+                        <span className="rounded-full bg-[#FFF1E8] px-2 py-0.5 text-[10px] font-extrabold text-[#D97757] leading-none">
+                          {unreadCount} new
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="max-h-64 overflow-y-auto space-y-2 font-sans pr-1">
+                      {notifications.length === 0 ? (
+                        <div className="py-6 text-center text-xs text-gray-400 italic">
+                          No notifications
+                        </div>
+                      ) : (
+                        notifications.map((n) => (
+                          <div 
+                            key={n.notificationId} 
+                            className={`p-2.5 rounded-xl border transition-colors text-left ${
+                              n.isRead ? "border-gray-50 bg-gray-50/50" : "border-[#FFF1E8] bg-[#FFFBF8]"
+                            }`}
+                          >
+                            <div className="flex justify-between items-start">
+                              <span className={`text-xs font-bold ${n.isRead ? "text-gray-500" : "text-[#3D2010]"}`}>
+                                {n.title}
+                              </span>
+                              {!n.isRead && (
+                                <button 
+                                  onClick={() => markAsRead(n.notificationId)}
+                                  className="text-[10px] font-extrabold text-[#D97757] hover:underline focus:outline-none"
+                                >
+                                  Mark read
+                                </button>
+                              )}
+                            </div>
+                            <p className={`text-[11px] mt-1 leading-relaxed ${n.isRead ? "text-gray-400" : "text-gray-600"}`}>
+                              {n.message}
+                            </p>
+                            <span className="text-[9px] text-gray-400 block mt-1">
+                              {new Date(n.createdAt).toLocaleDateString("en-IN", {
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit"
+                              })}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
             <button 
               onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
               className="flex items-center gap-3 focus:outline-none hover:opacity-90 text-left"
@@ -1692,6 +2684,149 @@ export default function PatientDashboard() {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+      {/* Clinical Experience Feedback Modal */}
+      {isFeedbackModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-[#F3EAE5] shadow-2xl p-6 sm:p-8 max-w-md w-full relative animate-in zoom-in-95 duration-200">
+            <button 
+              type="button"
+              onClick={() => {
+                setIsFeedbackModalOpen(false);
+                // Mark prompted in localStorage so it never triggers again for this encounter
+                localStorage.setItem('feedback_completed_prompted_' + feedbackForm.encounterId, 'true');
+              }}
+              className="absolute right-4 top-4 rounded-full p-1.5 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+
+            <h2 className="text-xl font-bold text-[#3D2010] mb-2 font-sans">
+              Clinical Experience Feedback
+            </h2>
+            <p className="text-xs text-[#8B7469] mb-6">
+              Please share your experience about your recent appointment to help us improve our services.
+            </p>
+
+            <form onSubmit={handleFeedbackSubmit} className="space-y-4">
+              <StarSelector 
+                label="Doctor Consultation" 
+                value={feedbackForm.doctorRating} 
+                onChange={(val) => setFeedbackForm(prev => ({ ...prev, doctorRating: val }))} 
+              />
+              <StarSelector 
+                label="Hospital Cleanliness & Facilities" 
+                value={feedbackForm.hospitalRating} 
+                onChange={(val) => setFeedbackForm(prev => ({ ...prev, hospitalRating: val }))} 
+              />
+              <StarSelector 
+                label="Receptionist & Staff" 
+                value={feedbackForm.receptionistRating} 
+                onChange={(val) => setFeedbackForm(prev => ({ ...prev, receptionistRating: val }))} 
+              />
+
+              <div className="flex flex-col gap-1.5 pt-2">
+                <label className="text-xs font-bold text-[#8B7469] uppercase tracking-wider">Any suggestions for improvements?</label>
+                <textarea
+                  value={feedbackForm.comment}
+                  onChange={e => setFeedbackForm(prev => ({ ...prev, comment: e.target.value }))}
+                  placeholder="Tell us what went well or what we can improve..."
+                  rows={3}
+                  className="w-full rounded-xl border border-[#E3D4CC] px-4 py-3 text-sm focus:border-[#D97757] focus:outline-none resize-none font-sans"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsFeedbackModalOpen(false);
+                    localStorage.setItem('feedback_completed_prompted_' + feedbackForm.encounterId, 'true');
+                  }}
+                  className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-bold text-gray-500 hover:bg-gray-50 font-sans"
+                >
+                  Not Now
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 py-3 rounded-xl text-white font-bold bg-[#3D2010] hover:bg-[#D97757] transition-colors text-sm font-sans"
+                >
+                  {submitting ? "Submitting..." : "Submit Feedback"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Website & Payments Experience Feedback Modal */}
+      {isTechFeedbackModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-[#F3EAE5] shadow-2xl p-6 sm:p-8 max-w-md w-full relative animate-in zoom-in-95 duration-200">
+            <button 
+              type="button"
+              onClick={() => setIsTechFeedbackModalOpen(false)}
+              className="absolute right-4 top-4 rounded-full p-1.5 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+
+            <h2 className="text-xl font-bold text-[#3D2010] mb-2 font-sans">
+              Website & Payment Experience
+            </h2>
+            <p className="text-xs text-[#8B7469] mb-6">
+              Help us improve our portal! Rate the technical speed and booking experience.
+            </p>
+
+            <form onSubmit={handleTechFeedbackSubmit} className="space-y-4">
+              <StarSelector 
+                label="Website Speed & Interface" 
+                value={techFeedbackForm.websiteRating} 
+                onChange={(val) => setTechFeedbackForm(prev => ({ ...prev, websiteRating: val }))} 
+              />
+              <StarSelector 
+                label="Online Payment Experience" 
+                value={techFeedbackForm.paymentRating} 
+                onChange={(val) => setTechFeedbackForm(prev => ({ ...prev, paymentRating: val }))} 
+              />
+
+              <div className="flex flex-col gap-1.5 pt-2">
+                <label className="text-xs font-bold text-[#8B7469] uppercase tracking-wider">Any technical issues / improvements?</label>
+                <textarea
+                  value={techFeedbackForm.comment}
+                  onChange={e => setTechFeedbackForm(prev => ({ ...prev, comment: e.target.value }))}
+                  placeholder="Tell us if the payment checkout was smooth or if you faced bugs..."
+                  rows={3}
+                  className="w-full rounded-xl border border-[#E3D4CC] px-4 py-3 text-sm focus:border-[#D97757] focus:outline-none resize-none font-sans"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsTechFeedbackModalOpen(false)}
+                  className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-bold text-gray-500 hover:bg-gray-50 font-sans"
+                >
+                  Skip
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 py-3 rounded-xl text-white font-bold bg-[#3D2010] hover:bg-[#D97757] transition-colors text-sm font-sans"
+                >
+                  {submitting ? "Submitting..." : "Submit Feedback"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
