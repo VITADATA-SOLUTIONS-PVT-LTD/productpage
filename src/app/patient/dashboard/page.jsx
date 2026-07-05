@@ -1324,10 +1324,10 @@ export default function PatientDashboard() {
             
             body { 
               font-family: 'Outfit', 'Helvetica Neue', Arial, sans-serif; 
-              padding: 50px; 
+              padding: 28px 36px; 
               color: #3D2010; 
               background-color: #ffffff;
-              line-height: 1.6;
+              line-height: 1.45;
             }
             
             .header-container { 
@@ -1335,24 +1335,24 @@ export default function PatientDashboard() {
               justify-content: space-between; 
               align-items: center;
               border-bottom: 2px solid #EEDFD7; 
-              padding-bottom: 30px; 
-              margin-bottom: 40px; 
+              padding-bottom: 14px; 
+              margin-bottom: 16px; 
             }
             
             .brand-section {
               display: flex;
               align-items: center;
-              gap: 15px;
+              gap: 10px;
             }
             
             .logo-img {
-              height: 55px;
+              height: 42px;
               width: auto;
               object-fit: contain;
             }
             
             .brand-details h1 {
-              font-size: 24px;
+              font-size: 20px;
               font-weight: 800;
               color: #D97757;
               margin: 0;
@@ -1360,8 +1360,8 @@ export default function PatientDashboard() {
             }
             
             .brand-details p {
-              margin: 3px 0 0 0;
-              font-size: 13px;
+              margin: 2px 0 0 0;
+              font-size: 11px;
               color: #8B7469;
               font-weight: 500;
               text-transform: uppercase;
@@ -1374,14 +1374,14 @@ export default function PatientDashboard() {
             
             .clinic-info h3 { 
               margin: 0; 
-              font-size: 18px; 
+              font-size: 15px; 
               font-weight: 700;
               color: #3D2010;
             }
             
             .clinic-info .specialty { 
-              margin: 4px 0 0 0; 
-              font-size: 13px; 
+              margin: 2px 0 0 0; 
+              font-size: 11px; 
               color: #D97757; 
               font-weight: 600;
               text-transform: uppercase;
@@ -1389,8 +1389,8 @@ export default function PatientDashboard() {
             }
             
             .clinic-info .hospital {
-              margin: 4px 0 0 0;
-              font-size: 13px;
+              margin: 2px 0 0 0;
+              font-size: 11px;
               color: #8B7469;
               font-weight: 400;
             }
@@ -1398,17 +1398,17 @@ export default function PatientDashboard() {
             .info-grid {
               display: grid;
               grid-template-columns: 1.2fr 1fr;
-              gap: 40px;
-              margin-bottom: 40px;
+              gap: 24px;
+              margin-bottom: 16px;
               background-color: #FFFDFB;
               border: 1px solid #F2D7C8;
-              border-radius: 16px;
-              padding: 24px;
+              border-radius: 10px;
+              padding: 12px 16px;
             }
             
             .info-block p {
-              margin: 8px 0;
-              font-size: 14px;
+              margin: 4px 0;
+              font-size: 12.5px;
               color: #554238;
             }
             
@@ -1418,37 +1418,37 @@ export default function PatientDashboard() {
             }
             
             .section { 
-              margin-bottom: 35px; 
+              margin-bottom: 14px; 
             }
             
             .section-title { 
-              font-size: 15px; 
+              font-size: 11px; 
               font-weight: 700; 
               color: #D97757; 
               text-transform: uppercase;
               letter-spacing: 0.08em;
               border-bottom: 1.5px solid #F2D7C8; 
-              padding-bottom: 8px; 
-              margin-bottom: 16px; 
+              padding-bottom: 4px; 
+              margin-bottom: 8px; 
             }
 
             .vitals-grid {
               display: flex;
               flex-wrap: wrap;
-              gap: 12px;
-              margin-top: 10px;
+              gap: 8px;
+              margin-top: 4px;
             }
 
             .vital-card {
               background-color: #FFF5F0;
               border: 1px solid #FBE5D8;
-              border-radius: 10px;
-              padding: 8px 16px;
-              font-size: 13px;
+              border-radius: 8px;
+              padding: 5px 12px;
+              font-size: 12px;
               color: #3D2010;
               display: flex;
               align-items: center;
-              gap: 6px;
+              gap: 5px;
             }
 
             .vital-card strong {
@@ -1459,9 +1459,9 @@ export default function PatientDashboard() {
               width: 100%; 
               border-collapse: separate; 
               border-spacing: 0;
-              margin-top: 15px; 
+              margin-top: 6px; 
               border: 1px solid #EEDFD7;
-              border-radius: 12px;
+              border-radius: 8px;
               overflow: hidden;
             }
             
@@ -1469,8 +1469,8 @@ export default function PatientDashboard() {
               background-color: #FFF9F5;
               border-bottom: 1.5px solid #EEDFD7; 
               text-align: left; 
-              padding: 14px 18px; 
-              font-size: 13px; 
+              padding: 8px 12px; 
+              font-size: 11px; 
               font-weight: 700;
               color: #806B61; 
               text-transform: uppercase;
@@ -1478,9 +1478,9 @@ export default function PatientDashboard() {
             }
             
             .meds-table td { 
-              padding: 16px 18px; 
+              padding: 8px 12px; 
               border-bottom: 1px solid #F3EAE5; 
-              font-size: 14px; 
+              font-size: 12.5px; 
               color: #3D2010;
             }
             
@@ -1494,37 +1494,37 @@ export default function PatientDashboard() {
             }
 
             .sig-section {
-              margin-top: 60px;
+              margin-top: 24px;
               display: flex;
               justify-content: flex-end;
             }
 
             .sig-box {
               text-align: center;
-              width: 200px;
+              width: 170px;
             }
 
             .sig-image {
-              max-height: 70px;
+              max-height: 50px;
               width: auto;
-              margin-bottom: 8px;
+              margin-bottom: 6px;
             }
 
             .sig-line {
               border-top: 1px solid #8B7469;
-              padding-top: 8px;
-              font-size: 13px;
+              padding-top: 5px;
+              font-size: 12px;
               font-weight: 600;
               color: #554238;
             }
             
             .footer { 
-              margin-top: 80px; 
+              margin-top: 20px; 
               text-align: center; 
-              font-size: 11px; 
+              font-size: 10px; 
               color: #9C8276; 
               border-top: 1px solid #EEDFD7; 
-              padding-top: 20px; 
+              padding-top: 10px; 
             }
           </style>
         </head>
@@ -1762,9 +1762,12 @@ export default function PatientDashboard() {
         </head>
         <body>
           <div class="header">
-            <div>
-              <div class="logo">VitaData Healthcare</div>
-              <p style="margin: 5px 0 0 0; font-size: 13px; color: #6B554A;">Official Payment Receipt</p>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <img src="${window.location.origin}/logo.png" style="height:40px; width:auto; object-fit:contain;" alt="VitaData" onerror="this.style.display='none'" />
+              <div>
+                <div class="logo">VitaData Healthcare</div>
+                <p style="margin: 3px 0 0 0; font-size: 13px; color: #6B554A;">Official Payment Receipt</p>
+              </div>
             </div>
             <div class="hosp-info">
               <h3 style="margin: 0;">${hospitalName}</h3>
