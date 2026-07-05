@@ -250,6 +250,19 @@ export default function LabStaffDashboard() {
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [profileModalMode, setProfileModalMode] = useState("view"); // "view" or "edit"
+
+  useEffect(() => {
+    const handleDocumentClick = (e) => {
+      if (!e.target.closest(".notification-bell-btn") && !e.target.closest(".notification-dropdown-menu")) {
+        setIsNotificationOpen(false);
+      }
+      if (!e.target.closest(".profile-dropdown-btn") && !e.target.closest(".profile-dropdown-menu")) {
+        setIsProfileDropdownOpen(false);
+      }
+    };
+    document.addEventListener("click", handleDocumentClick);
+    return () => document.removeEventListener("click", handleDocumentClick);
+  }, []);
   const [editForm, setEditForm] = useState({
     firstName: "",
     lastName: "",
@@ -420,6 +433,7 @@ export default function LabStaffDashboard() {
             const profileRes = await fetch(`${apiBaseUrl}/users/myinfo`, {
               headers: { Authorization: `Bearer ${token}` },
             });
+            if (profileRes.status === 401) { logout(); return; }
             if (profileRes.ok) {
               const profileData = await profileRes.json();
               currentProfile = profileData.data;
@@ -492,7 +506,6 @@ export default function LabStaffDashboard() {
           logout();
         } else {
           expiryTimer = setTimeout(() => {
-            alert("Your session has expired. You are being logged out.");
             logout();
           }, remaining);
         }
@@ -853,21 +866,24 @@ export default function LabStaffDashboard() {
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Header */}
         <header className="sticky top-0 z-30 flex h-[74px] items-center justify-between border-b border-[#EEDFD7] bg-white/95 px-4 backdrop-blur md:px-8">
-          <button aria-label="Open navigation" className="rounded-lg p-2 text-[#6B554A] hover:bg-[#FFF4EC] lg:hidden" onClick={() => setIsSidebarOpen(true)}>
-            <span className="block h-0.5 w-5 bg-current" />
-            <span className="mt-1.5 block h-0.5 w-5 bg-current" />
-            <span className="mt-1.5 block h-0.5 w-5 bg-current" />
-          </button>
-          <div className="hidden sm:block">
-            <p className="text-xs font-medium text-[#9C8276]">Clinical Lab Operations</p>
-            <p className="text-sm font-bold text-[#3D2010]">{hospitalName}</p>
+          <div className="flex items-center gap-3">
+            <button aria-label="Open navigation" className="rounded-lg p-2 text-[#6B554A] hover:bg-[#FFF4EC] lg:hidden" onClick={() => setIsSidebarOpen(true)}>
+              <span className="block h-0.5 w-5 bg-current" />
+              <span className="mt-1.5 block h-0.5 w-5 bg-current" />
+              <span className="mt-1.5 block h-0.5 w-5 bg-current" />
+            </button>
+            <span className="text-xl font-extrabold tracking-tight text-[#D97757]">VitaData</span>
+            <div className="hidden sm:block border-l border-[#EEDFD7] pl-3">
+              <p className="text-xs font-medium text-[#9C8276]">Clinical Lab Operations</p>
+              <p className="text-sm font-bold text-[#3D2010]">{hospitalName}</p>
+            </div>
           </div>
           <div className="relative flex items-center gap-3">
             {/* Notification Bell */}
             <div className="relative">
               <button 
                 onClick={() => setIsNotificationOpen(!isNotificationOpen)}
-                className="relative rounded-full p-2 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors focus:outline-none"
+                className="notification-bell-btn relative rounded-full p-2 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors focus:outline-none"
               >
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -881,7 +897,7 @@ export default function LabStaffDashboard() {
               {isNotificationOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setIsNotificationOpen(false)} />
-                  <div className="absolute right-0 top-12 z-50 w-80 rounded-2xl border border-[#EEDFD7] bg-white p-3 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="notification-dropdown-menu absolute right-0 top-12 z-50 w-80 rounded-2xl border border-[#EEDFD7] bg-white p-3 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="flex items-center justify-between border-b border-[#F3EAE5] pb-2 mb-2">
                       <span className="text-sm font-bold text-[#3D2010] font-sans">Notifications</span>
                       {unreadCount > 0 && (
@@ -939,7 +955,7 @@ export default function LabStaffDashboard() {
 
             <button 
               onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
-              className="flex items-center gap-3 focus:outline-none hover:opacity-90 text-left"
+              className="profile-dropdown-btn flex items-center gap-3 focus:outline-none hover:opacity-90 text-left"
             >
               <div className="hidden text-right sm:block">
                 <p className="text-sm font-semibold text-[#3D2010]">{staffName}</p>
@@ -953,7 +969,7 @@ export default function LabStaffDashboard() {
             {isProfileDropdownOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setIsProfileDropdownOpen(false)} />
-                <div className="absolute right-0 top-12 z-50 w-56 rounded-2xl border border-[#EEDFD7] bg-white p-2 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="profile-dropdown-menu absolute right-0 top-12 z-50 w-56 rounded-2xl border border-[#EEDFD7] bg-white p-2 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
                   <div className="px-3 py-2 border-b border-[#F3EAE5] mb-1">
                     <p className="text-xs text-[#9C8276] font-medium font-sans">Logged in as</p>
                     <p className="text-sm font-bold text-[#3D2010]">{staffName}</p>

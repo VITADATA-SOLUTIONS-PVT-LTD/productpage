@@ -332,6 +332,7 @@ function MedicineSearchInput({ value, onChange, placeholder, apiBaseUrl }) {
   const [suggestions, setSuggestions] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [userHasTyped, setUserHasTyped] = useState(false);
 
   // Initialize display text if value is already set
   useEffect(() => {
@@ -352,14 +353,17 @@ function MedicineSearchInput({ value, onChange, placeholder, apiBaseUrl }) {
 
   // Live Query filter search
   useEffect(() => {
-    if (!searchText || searchText.length < 2 || !isOpen) {
+    if (!isOpen) {
       setSuggestions([]);
       return;
     }
     setLoading(true);
     const token = localStorage.getItem("doctorToken");
     const delayDebounce = setTimeout(() => {
-      fetch(`${apiBaseUrl}/medicines?name=${encodeURIComponent(searchText)}`, {
+      const url = (userHasTyped && searchText.trim())
+        ? `${apiBaseUrl}/medicines?name=${encodeURIComponent(searchText.trim())}`
+        : `${apiBaseUrl}/medicines`;
+      fetch(url, {
         headers: { Authorization: `Bearer ${token}` }
       })
         .then(res => res.json())
@@ -368,10 +372,10 @@ function MedicineSearchInput({ value, onChange, placeholder, apiBaseUrl }) {
         })
         .catch(() => {})
         .finally(() => setLoading(false));
-    }, 300);
+    }, (userHasTyped && searchText.trim()) ? 300 : 0);
 
     return () => clearTimeout(delayDebounce);
-  }, [searchText, isOpen, apiBaseUrl]);
+  }, [searchText, isOpen, apiBaseUrl, userHasTyped]);
 
   return (
     <div className="relative">
@@ -380,16 +384,23 @@ function MedicineSearchInput({ value, onChange, placeholder, apiBaseUrl }) {
         placeholder={placeholder}
         className="w-full rounded-lg border border-[#E3D4CC] px-3 py-2 text-xs focus:border-[#D97757] focus:outline-none"
         value={searchText}
-        onChange={(e) => { setSearchText(e.target.value); setIsOpen(true); }}
-        onFocus={() => setIsOpen(true)}
+        onChange={(e) => { 
+          setSearchText(e.target.value); 
+          setIsOpen(true);
+          setUserHasTyped(true);
+        }}
+        onFocus={() => {
+          setIsOpen(true);
+          setUserHasTyped(false);
+        }}
       />
       {isOpen && (
         <div className="absolute left-0 right-0 z-50 mt-1 max-h-60 overflow-y-auto rounded-lg border border-[#E3D4CC] bg-white shadow-lg">
           {loading && <div className="px-4 py-2 text-xs text-[#9C8276] animate-pulse">Searching catalog...</div>}
-          {!loading && suggestions.length === 0 && searchText.length >= 2 && (
+          {!loading && suggestions.length === 0 && (
             <div className="px-4 py-2 text-xs text-red-500">No matching medicines found</div>
           )}
-          {suggestions.map((m) => (
+          {!loading && suggestions.map((m) => (
             <button
               key={m.medicineId}
               type="button"
@@ -397,6 +408,7 @@ function MedicineSearchInput({ value, onChange, placeholder, apiBaseUrl }) {
                 onChange(m.medicineId);
                 setSearchText(m.name);
                 setIsOpen(false);
+                setUserHasTyped(false);
               }}
               className="w-full px-4 py-2 text-left text-xs text-[#554238] hover:bg-[#FFF4EC] transition-colors border-b border-[#F3EAE5] last:border-b-0"
             >
@@ -410,7 +422,89 @@ function MedicineSearchInput({ value, onChange, placeholder, apiBaseUrl }) {
         <button
           type="button"
           onClick={() => setIsOpen(false)}
-          className="fixed inset-0 -z-10 bg-transparent cursor-default"
+          className="fixed inset-0 z-40 bg-transparent cursor-default"
+        />
+      )}
+    </div>
+  );
+}
+
+// Lab Test Autocomplete Search Component
+function LabTestSearchInput({ value, onChange, placeholder, labTests }) {
+  const [searchText, setSearchText] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
+  const [userHasTyped, setUserHasTyped] = useState(false);
+
+  // Sync display text when value or labTests change
+  useEffect(() => {
+    if (!value) {
+      setSearchText("");
+      return;
+    }
+    const found = labTests.find(t => t.labTestId === value);
+    if (found) {
+      setSearchText(found.testName || "");
+    }
+  }, [value, labTests]);
+
+  const filteredSuggestions = React.useMemo(() => {
+    if (!isOpen) return [];
+    if (!userHasTyped || !searchText.trim()) return labTests; // Show all if empty
+    const query = searchText.toLowerCase();
+    return labTests.filter(t => 
+      (t.testName || "").toLowerCase().includes(query) ||
+      (t.department || "").toLowerCase().includes(query) ||
+      (t.shortCode || "").toLowerCase().includes(query)
+    );
+  }, [searchText, labTests, isOpen, userHasTyped]);
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        placeholder={placeholder}
+        className="w-full rounded-lg border border-[#C7D9F8] px-3 py-2 text-xs focus:border-[#4B7BF5] focus:outline-none"
+        value={searchText}
+        onChange={(e) => { 
+          setSearchText(e.target.value); 
+          setIsOpen(true); 
+          setUserHasTyped(true);
+        }}
+        onFocus={() => {
+          setIsOpen(true);
+          setUserHasTyped(false);
+        }}
+      />
+      {isOpen && (
+        <div className="absolute left-0 right-0 z-50 mt-1 max-h-60 overflow-y-auto rounded-lg border border-[#C7D9F8] bg-white shadow-lg">
+          {filteredSuggestions.length === 0 && (
+            <div className="px-4 py-2 text-xs text-red-500">No matching lab tests found</div>
+          )}
+          {filteredSuggestions.map((t) => (
+            <button
+              key={t.labTestId}
+              type="button"
+              onClick={() => {
+                onChange(t.labTestId);
+                setSearchText(t.testName);
+                setIsOpen(false);
+                setUserHasTyped(false);
+              }}
+              className="w-full px-4 py-2 text-left text-xs text-[#554238] hover:bg-[#EEF4FF] transition-colors border-b border-[#F3EAE5] last:border-b-0"
+            >
+              <div className="font-semibold">{t.testName}</div>
+              <div className="text-[10px] text-[#8B7469]">
+                {t.department || "General"} • Normal: {t.normalRange || "Not specified"} {t.unit ? `(${t.unit})` : ""}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+      {isOpen && (
+        <button
+          type="button"
+          onClick={() => setIsOpen(false)}
+          className="fixed inset-0 z-40 bg-transparent cursor-default"
         />
       )}
     </div>
@@ -443,6 +537,19 @@ export default function DoctorDashboard() {
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [isViewProfileOpen, setIsViewProfileOpen] = useState(false);
+
+  useEffect(() => {
+    const handleDocumentClick = (e) => {
+      if (!e.target.closest(".notification-bell-btn") && !e.target.closest(".notification-dropdown-menu")) {
+        setIsNotificationOpen(false);
+      }
+      if (!e.target.closest(".profile-dropdown-btn") && !e.target.closest(".profile-dropdown-menu")) {
+        setIsProfileDropdownOpen(false);
+      }
+    };
+    document.addEventListener("click", handleDocumentClick);
+    return () => document.removeEventListener("click", handleDocumentClick);
+  }, []);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [editProfileForm, setEditProfileForm] = useState({
     phoneNumber: "",
@@ -618,6 +725,7 @@ export default function DoctorDashboard() {
       const profileRes = await fetch(`${apiBaseUrl}/users/myinfo`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (profileRes.status === 401) { logout(); return; }
       let currentProfile = null;
       if (profileRes.ok) {
         const profileData = await profileRes.json();
@@ -726,7 +834,6 @@ export default function DoctorDashboard() {
           logout();
         } else {
           expiryTimer = setTimeout(() => {
-            alert("Your session has expired. You are being logged out.");
             logout();
           }, remaining);
         }
@@ -1435,20 +1542,16 @@ export default function DoctorDashboard() {
                 <div key={li} className="grid gap-3 sm:grid-cols-12 items-end bg-[#F5F8FF] p-3 rounded-xl border border-[#C7D9F8]">
                   <div className="sm:col-span-4">
                     <label className="block text-xs font-semibold text-[#554238] mb-1">Lab Test</label>
-                    <select
-                      className="w-full rounded-lg border border-[#C7D9F8] bg-white px-3 py-2 text-xs focus:border-[#4B7BF5] focus:outline-none"
+                    <LabTestSearchInput
                       value={lab.labTestId}
-                      onChange={e => {
+                      onChange={val => {
                         const updated = [...suggestedLabTests];
-                        updated[li] = { ...updated[li], labTestId: e.target.value };
+                        updated[li] = { ...updated[li], labTestId: val };
                         setSuggestedLabTests(updated);
                       }}
-                    >
-                      <option value="">Select a test...</option>
-                      {labTests.map(t => (
-                        <option key={t.labTestId} value={t.labTestId}>{t.testName}</option>
-                      ))}
-                    </select>
+                      placeholder="Type to search lab test..."
+                      labTests={labTests}
+                    />
                   </div>
                   <div className="sm:col-span-3">
                     <label className="block text-xs font-semibold text-[#554238] mb-1">Suggested Date</label>
@@ -1885,21 +1988,24 @@ export default function DoctorDashboard() {
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Header */}
         <header className="sticky top-0 z-30 flex h-[74px] items-center justify-between border-b border-[#EEDFD7] bg-white/95 px-4 backdrop-blur md:px-8">
-          <button aria-label="Open navigation" className="rounded-lg p-2 text-[#6B554A] hover:bg-[#FFF4EC] lg:hidden" onClick={() => setIsSidebarOpen(true)}>
-            <span className="block h-0.5 w-5 bg-current" />
-            <span className="mt-1.5 block h-0.5 w-5 bg-current" />
-            <span className="mt-1.5 block h-0.5 w-5 bg-current" />
-          </button>
-          <div className="hidden sm:block">
-            <p className="text-xs font-medium text-[#9C8276]">Clinical Workspace</p>
-            <p className="text-sm font-bold text-[#3D2010]">{docSpecialization}</p>
+          <div className="flex items-center gap-3">
+            <button aria-label="Open navigation" className="rounded-lg p-2 text-[#6B554A] hover:bg-[#FFF4EC] lg:hidden" onClick={() => setIsSidebarOpen(true)}>
+              <span className="block h-0.5 w-5 bg-current" />
+              <span className="mt-1.5 block h-0.5 w-5 bg-current" />
+              <span className="mt-1.5 block h-0.5 w-5 bg-current" />
+            </button>
+            <span className="text-xl font-extrabold tracking-tight text-[#D97757]">VitaData</span>
+            <div className="hidden sm:block border-l border-[#EEDFD7] pl-3">
+              <p className="text-xs font-medium text-[#9C8276]">Clinical Workspace</p>
+              <p className="text-sm font-bold text-[#3D2010]">{docSpecialization}</p>
+            </div>
           </div>
           <div className="relative flex items-center gap-3">
             {/* Notification Bell */}
             <div className="relative">
               <button 
                 onClick={() => setIsNotificationOpen(!isNotificationOpen)}
-                className="relative rounded-full p-2 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors focus:outline-none"
+                className="notification-bell-btn relative rounded-full p-2 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors focus:outline-none"
               >
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -1913,7 +2019,7 @@ export default function DoctorDashboard() {
               {isNotificationOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setIsNotificationOpen(false)} />
-                  <div className="absolute right-0 top-12 z-50 w-80 rounded-2xl border border-[#EEDFD7] bg-white p-3 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="notification-dropdown-menu absolute right-0 top-12 z-50 w-80 rounded-2xl border border-[#EEDFD7] bg-white p-3 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="flex items-center justify-between border-b border-[#F3EAE5] pb-2 mb-2">
                       <span className="text-sm font-bold text-[#3D2010] font-sans">Notifications</span>
                       {unreadCount > 0 && (
@@ -1971,7 +2077,7 @@ export default function DoctorDashboard() {
 
             <button 
               onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
-              className="flex items-center gap-3 focus:outline-none hover:opacity-90 text-left"
+              className="profile-dropdown-btn flex items-center gap-3 focus:outline-none hover:opacity-90 text-left"
             >
               <div className="hidden text-right sm:block">
                 <p className="text-sm font-semibold text-[#3D2010]">Dr. {doctorName}</p>
@@ -1989,7 +2095,7 @@ export default function DoctorDashboard() {
             {isProfileDropdownOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setIsProfileDropdownOpen(false)} />
-                <div className="absolute right-0 top-12 z-50 w-56 rounded-2xl border border-[#EEDFD7] bg-white p-2 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="profile-dropdown-menu absolute right-0 top-12 z-50 w-56 rounded-2xl border border-[#EEDFD7] bg-white p-2 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
                   <div className="px-3 py-2 border-b border-[#F3EAE5] mb-1">
                     <p className="text-xs text-[#9C8276] font-medium font-sans">Logged in as</p>
                     <p className="text-sm font-bold text-[#3D2010]">Dr. {doctorName}</p>
