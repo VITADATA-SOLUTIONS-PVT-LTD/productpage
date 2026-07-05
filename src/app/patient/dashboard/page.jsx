@@ -609,18 +609,22 @@ export default function PatientDashboard() {
               })
             });
 
-            if (verifyRes.ok) {
+              if (verifyRes.ok) {
               setSuccessMsg("Payment completed successfully!");
               
-              // Load the tech & payments feedback form
+              // Load the tech & payments feedback form — show only once per encounter
               const encounterItem = invoice.items?.find(item => item.itemType === "ENCOUNTER");
-              setTechFeedbackForm({
-                encounterId: encounterItem?.itemId || "",
-                websiteRating: 5,
-                paymentRating: 5,
-                comment: ""
-              });
-              setIsTechFeedbackModalOpen(true);
+              const techEncId = encounterItem?.itemId || "";
+              const techAlreadySeen = techEncId && localStorage.getItem('feedback_tech_seen_' + techEncId);
+              if (!techAlreadySeen) {
+                setTechFeedbackForm({
+                  encounterId: techEncId,
+                  websiteRating: 5,
+                  paymentRating: 5,
+                  comment: ""
+                });
+                setIsTechFeedbackModalOpen(true);
+              }
               
               await loadData();
             } else {
@@ -683,9 +687,7 @@ export default function PatientDashboard() {
 
       setSuccessMsg("Clinical feedback submitted successfully! Thank you.");
       setIsFeedbackModalOpen(false);
-      
-      // Set skip/prompted flag in localStorage so it is never shown again
-      localStorage.setItem('feedback_completed_prompted_' + feedbackForm.encounterId, 'true');
+      localStorage.setItem('feedback_clinical_seen_' + feedbackForm.encounterId, 'true');
       await loadData();
     } catch (err) {
       setError(err.message);
@@ -724,6 +726,9 @@ export default function PatientDashboard() {
 
       setSuccessMsg("Technical feedback submitted successfully! Thank you.");
       setIsTechFeedbackModalOpen(false);
+      if (techFeedbackForm.encounterId) {
+        localStorage.setItem('feedback_tech_seen_' + techFeedbackForm.encounterId, 'true');
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -735,109 +740,110 @@ export default function PatientDashboard() {
     return (
       <div className="space-y-6 animate-fade-in">
         <SectionHeader title="My Invoices & Payments" description="Pay consultation fees online via Razorpay and download printable receipts." />
-        {invoices.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[#EEDFD7] bg-white p-8 text-center text-sm text-[#9C8276]">
-            No billing or invoice details found.
-          </div>
-        ) : (
-          <div className="grid gap-6 sm:grid-cols-2">
-            {invoices.map((invoice) => {
-              const encounterItem = invoice.items?.find(item => item.itemType === "ENCOUNTER");
-              const doctorName = encounterItem?.encounter?.doctor?.user 
-                ? `Dr. ${encounterItem.encounter.doctor.user.firstName} ${encounterItem.encounter.doctor.user.lastName}`
-                : "Healthcare Specialist";
-              const scheduledTime = encounterItem?.encounter?.scheduledTime;
-              const isPaid = invoice.status === "PAID";
-              
-              return (
-                <div 
-                  key={invoice.invoiceId} 
-                  className={`group relative overflow-hidden rounded-2xl border bg-gradient-to-br from-[#FFFDFB] to-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md ${
-                    isPaid ? "border-emerald-100" : "border-[#F2D7C8]"
-                  }`}
-                >
-                  {/* Decorative top border gradient */}
-                  <div className={`absolute top-0 left-0 right-0 h-1.5 ${
-                    isPaid ? "bg-emerald-500" : "bg-gradient-to-r from-[#D97757] to-[#F0CDBB]"
-                  }`} />
-                  
-                  <div className="flex justify-between items-start mb-4 mt-1">
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#9C8276]">Invoice</span>
-                      <h3 className="text-base font-bold text-[#3D2010] mt-0.5">{invoice.invoiceNumber}</h3>
-                    </div>
-                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.05em] ${
-                      isPaid 
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-700" 
-                        : "border-amber-200 bg-amber-50 text-amber-700"
-                    }`}>
-                      {isPaid ? "Paid" : "Pending Payment"}
-                    </span>
-                  </div>
-                  
-                  <div className="space-y-3 border-t border-b border-[#F3EAE5] py-4 my-4">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-[#8B7469]">Service / Consultation</span>
-                      <span className="font-semibold text-[#3D2010] text-right">{doctorName}</span>
-                    </div>
-                    {scheduledTime && (
-                      <div className="flex justify-between text-xs">
-                        <span className="text-[#8B7469]">Appointment Date</span>
-                        <span className="text-[#554238]">{formatDate(scheduledTime, true)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between text-xs pt-1">
-                      <span className="text-[#8B7469]">Consultation Fee</span>
-                      <span className="text-[#554238]">₹{Number(invoice.totalAmount).toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-[#8B7469]">GST (10%)</span>
-                      <span className="text-[#554238]">₹{Number(invoice.taxAmount).toFixed(2)}</span>
-                    </div>
-                    {Number(invoice.discountAmount) > 0 && (
-                      <div className="flex justify-between text-xs text-emerald-600">
-                        <span>Discount</span>
-                        <span>-₹{Number(invoice.discountAmount).toFixed(2)}</span>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center justify-between mt-4">
-                    <div>
-                      <span className="text-[10px] text-[#9C8276] block">Total Amount</span>
-                      <span className={`text-xl font-black ${isPaid ? "text-emerald-600" : "text-[#D97757]"}`}>₹{Number(invoice.finalAmount).toFixed(2)}</span>
-                    </div>
-                    
-                    {isPaid ? (
-                      <button
-                        onClick={() => handleDownloadPDF("invoice", invoice)}
-                        className="rounded-xl bg-white hover:bg-emerald-50 border border-emerald-200 text-emerald-700 px-5 py-2.5 text-xs font-bold transition-all duration-300 shadow-sm hover:shadow flex items-center gap-2 active:scale-95"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        View Invoice
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handlePayment(invoice)}
-                        className="rounded-xl bg-[#3D2010] hover:bg-[#D97757] text-white px-5 py-2.5 text-xs font-bold transition-all duration-300 shadow-sm hover:shadow active:scale-95 flex items-center gap-2"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                        </svg>
-                        Pay Now
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <DataTable
+          rows={invoices}
+          keyFor={(row) => row.invoiceId}
+          emptyMessage="No billing or invoice details found."
+          columns={[
+            {
+              label: "Invoice No.",
+              render: (row) => (
+                <span className="font-bold text-[#3D2010]">{row.invoiceNumber}</span>
+              ),
+            },
+            {
+              label: "Doctor / Service",
+              render: (row) => {
+                const encounterItem = row.items?.find(item => item.itemType === "ENCOUNTER");
+                const doctorName = encounterItem?.encounter?.doctor?.user
+                  ? `Dr. ${encounterItem.encounter.doctor.user.firstName} ${encounterItem.encounter.doctor.user.lastName}`
+                  : "Healthcare Specialist";
+                return <span className="text-[#554238]">{doctorName}</span>;
+              },
+            },
+            {
+              label: "Date",
+              render: (row) => {
+                const encounterItem = row.items?.find(item => item.itemType === "ENCOUNTER");
+                const scheduledTime = encounterItem?.encounter?.scheduledTime;
+                return scheduledTime
+                  ? <span className="text-[#7A655B]">{formatDate(scheduledTime, true)}</span>
+                  : <span className="text-[#9C8276] italic text-xs">—</span>;
+              },
+            },
+            {
+              label: "Consult Fee",
+              render: (row) => <span className="text-[#554238]">₹{Number(row.totalAmount).toFixed(2)}</span>,
+            },
+            {
+              label: "GST",
+              render: (row) => <span className="text-[#9C8276]">₹{Number(row.taxAmount).toFixed(2)}</span>,
+            },
+            {
+              label: "Discount",
+              render: (row) => Number(row.discountAmount) > 0
+                ? <span className="text-emerald-600 font-semibold">−₹{Number(row.discountAmount).toFixed(2)}</span>
+                : <span className="text-[#9C8276]">—</span>,
+            },
+            {
+              label: "Total",
+              render: (row) => {
+                const isPaid = row.status === "PAID";
+                return (
+                  <span className={`font-black text-sm ${isPaid ? "text-emerald-600" : "text-[#D97757]"}`}>
+                    ₹{Number(row.finalAmount).toFixed(2)}
+                  </span>
+                );
+              },
+            },
+            {
+              label: "Status",
+              render: (row) => {
+                const isPaid = row.status === "PAID";
+                return (
+                  <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${
+                    isPaid
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border-amber-200 bg-amber-50 text-amber-700"
+                  }`}>
+                    {isPaid ? "Paid" : "Pending"}
+                  </span>
+                );
+              },
+            },
+            {
+              label: "Action",
+              render: (row) => {
+                const isPaid = row.status === "PAID";
+                return isPaid ? (
+                  <button
+                    onClick={() => handleDownloadPDF("invoice", row)}
+                    className="rounded-lg bg-white hover:bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-1.5 text-xs font-bold transition-colors flex items-center gap-1.5"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Invoice
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handlePayment(row)}
+                    className="rounded-lg bg-[#3D2010] hover:bg-[#D97757] text-white px-3 py-1.5 text-xs font-bold transition-colors flex items-center gap-1.5"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                    Pay Now
+                  </button>
+                );
+              },
+            },
+          ]}
+        />
       </div>
     );
   };
+
 
   const [selectedSpecialty, setSelectedSpecialty] = useState("");
   const [selectedHospitalId, setSelectedHospitalId] = useState("");
@@ -982,14 +988,19 @@ export default function PatientDashboard() {
     loadData();
   }, [loadData]);
 
-  // Trigger Clinical Feedback Modal on load for recently completed appointment
+  // Trigger Clinical Feedback Modal once per completed encounter (most recent)
   useEffect(() => {
     if (appointments && appointments.length > 0) {
-      const completedEncounter = appointments.find(appt => appt.status === 'COMPLETED');
-      if (completedEncounter) {
-        const encId = completedEncounter.id || completedEncounter.encounterId;
-        const prompted = localStorage.getItem('feedback_completed_prompted_' + encId);
-        if (!prompted) {
+      // Pick the most recently completed encounter
+      const completed = appointments
+        .filter(a => a.status === 'COMPLETED')
+        .sort((a, b) => new Date(b.scheduledTime || 0) - new Date(a.scheduledTime || 0));
+      if (completed.length > 0) {
+        const latestEncounter = completed[0];
+        const encId = latestEncounter.id || latestEncounter.encounterId;
+        if (!encId) return;
+        const alreadySeen = localStorage.getItem('feedback_clinical_seen_' + encId);
+        if (!alreadySeen) {
           setFeedbackForm({
             encounterId: encId,
             doctorRating: 5,
@@ -1067,11 +1078,43 @@ export default function PatientDashboard() {
   const patientName = profile ? fullName(profile) : "Patient";
   const patientBloodGroup = profile?.patient?.bloodGroup || "Not Recorded";
 
-  // Filter latest prescription medication
-  const latestPrescription = records.prescriptions && records.prescriptions.length > 0
-    ? records.prescriptions[0]
-    : null;
-  const latestMedications = latestPrescription ? latestPrescription.medicines : [];
+  // Build deduplicated active medication list across all prescriptions.
+  // For each medicine name, pick the prescription that still has remaining days.
+  // "remaining days" = durationDays − days elapsed since the prescription's encounter date.
+  const activeMedications = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    // Flatten all medicines with their prescription context
+    const allMeds = (records.prescriptions || []).flatMap((presc) => {
+      const startDate = presc.generatedAt
+        ? new Date(presc.generatedAt)
+        : presc.encounter?.scheduledTime
+        ? new Date(presc.encounter.scheduledTime)
+        : null;
+      return (presc.medicines || []).map((med) => {
+        const durationDays = Number(med.durationDays) || 0;
+        let daysElapsed = 0;
+        if (startDate) {
+          const start = new Date(startDate);
+          start.setHours(0, 0, 0, 0);
+          daysElapsed = Math.max(0, Math.floor((today - start) / 86400000));
+        }
+        const daysRemaining = Math.max(0, durationDays - daysElapsed);
+        return { ...med, daysRemaining, daysElapsed, startDate };
+      });
+    });
+    // Deduplicate: for each medicine name keep the one with most remaining days
+    const byName = {};
+    allMeds.forEach((med) => {
+      const key = (med.name || med.medicineName || "").toLowerCase().trim();
+      if (!key) return;
+      if (!byName[key] || med.daysRemaining > byName[key].daysRemaining) {
+        byName[key] = med;
+      }
+    });
+    // Only show medicines that still have days remaining (active)
+    return Object.values(byName).filter((m) => m.daysRemaining > 0);
+  }, [records.prescriptions]);
 
   // Extract unique doctor specialties
   const specialties = useMemo(() => {
@@ -1876,7 +1919,7 @@ export default function PatientDashboard() {
     return (
       <div className="space-y-7">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <MetricCard label="Active Medications (Latest)" value={latestMedications.length} detail="Tracked on schedule" />
+          <MetricCard label="Active Medications" value={activeMedications.length} detail="Currently active courses" />
           <MetricCard label="Lab Reports" value={records.labReports.length} detail="Completed test logs" tone="blue" />
           <MetricCard label="Prescription Sheets" value={activePrescCount} detail="Issued by clinicians" tone="green" />
         </div>
@@ -2085,7 +2128,27 @@ export default function PatientDashboard() {
               { label: "Token No", render: (row) => <span className="font-bold text-[#D97757]">#{row.tokenNo || 1}</span> },
               { label: "Doctor", render: (row) => row.doctor?.name || "Doctor" },
               { label: "Hospital Location", render: (row) => row.hospital?.name || "—" },
-              { label: "Scheduled At", render: (row) => formatDate(row.scheduledTime, true) },
+              {
+                label: "Scheduled At",
+                render: (row) => {
+                  const scheduled = row.scheduledTime ? new Date(row.scheduledTime) : null;
+                  const now = new Date();
+                  const isPast = scheduled ? scheduled.getTime() < now.getTime() : false;
+                  const isNotVisited = row.status !== "COMPLETED" && row.status !== "CANCELLED";
+                  const isMissed = isPast && isNotVisited;
+
+                  if (isMissed) {
+                    return (
+                      <div className="leading-tight">
+                        <div>{formatDate(row.scheduledTime, true)}</div>
+                        <div className="text-[11px] text-[#554238] font-semibold mt-0.5">Missed</div>
+                      </div>
+                    );
+                  }
+
+                  return formatDate(row.scheduledTime, true);
+                },
+              },
               { label: "Reason", render: (row) => row.reason || "General Checkup" },
               {
                 label: "Recorded Vitals",
@@ -2103,11 +2166,35 @@ export default function PatientDashboard() {
                   );
                 }
               },
-              { label: "Status", render: (row) => <StatusBadge value={row.status} /> },
+              {
+                label: "Status",
+                render: (row) => {
+                  const scheduled = row.scheduledTime ? new Date(row.scheduledTime) : null;
+                  const now = new Date();
+                  const isPast = scheduled ? scheduled.getTime() < now.getTime() : false;
+                  const isNotVisited = row.status !== "COMPLETED" && row.status !== "CANCELLED";
+                  const isMissed = isPast && isNotVisited;
+
+                  if (isMissed) {
+                    return (
+                      <span className="inline-flex rounded-full border border-gray-400 bg-gray-100 px-2.5 py-1 text-[11px] font-semibold text-gray-700">
+                        MISSED
+                      </span>
+                    );
+                  }
+
+                  return <StatusBadge value={row.status} />;
+                }
+              },
               {
                 label: "Actions",
                 render: (row) => {
-                  const canCancel = row.status === "SCHEDULED" || row.status === "CONFIRMED" || row.status === "RESCHEDULED";
+                  const scheduled = row.scheduledTime ? new Date(row.scheduledTime) : null;
+                  const now = new Date();
+                  const isPast = scheduled ? scheduled.getTime() < now.getTime() : false;
+                  const isNotVisited = row.status !== "COMPLETED" && row.status !== "CANCELLED";
+                  const isMissed = isPast && isNotVisited;
+                  const canCancel = !isMissed && (row.status === "SCHEDULED" || row.status === "CONFIRMED" || row.status === "RESCHEDULED");
                   if (!canCancel) return "—";
                   return (
                     <button
@@ -2196,7 +2283,19 @@ export default function PatientDashboard() {
           <div>
             <SectionHeader title="Today's Dose Schedule" description="Log of today's medication intake queue." />
             <DataTable
-              rows={medDashboard?.todaySchedule || []}
+              rows={(() => {
+                // Only show entries for currently active medications, deduplicated by medicineName
+                const activeNames = new Set(
+                  activeMedications.map((m) => (m.name || "").toLowerCase().trim())
+                );
+                const seen = new Set();
+                return (medDashboard?.todaySchedule || []).filter((row) => {
+                  const key = (row.medicineName || "").toLowerCase().trim();
+                  if (!activeNames.has(key) || seen.has(key)) return false;
+                  seen.add(key);
+                  return true;
+                });
+              })()}
               keyFor={(row) => row.id}
               emptyMessage="No medications scheduled for today."
               columns={[
@@ -2234,16 +2333,33 @@ export default function PatientDashboard() {
           </div>
 
           <div>
-            <SectionHeader title="Tracked Prescription Medications (Latest Prescription Only)" description="Medicines from your latest prescription sheet." />
+            <SectionHeader title="Active Medications" description="Deduplicated active medicines across all prescriptions — showing remaining days left." />
             <DataTable
-              rows={latestMedications}
-              keyFor={(row) => row.id}
-              emptyMessage="No medicines listed on the latest prescription."
+              rows={activeMedications}
+              keyFor={(row, i) => `${row.name}-${i}`}
+              emptyMessage="No active medicines currently prescribed."
               columns={[
-                { label: "Name", render: (row) => <span className="font-semibold text-[#3D2010]">{row.name}</span> },
-                { label: "Dosage Format", render: (row) => row.dosage || "—" },
+                { label: "Medicine Name", render: (row) => <span className="font-semibold text-[#3D2010]">{row.name}</span> },
+                { label: "Dosage", render: (row) => row.dosage || "—" },
                 { label: "Frequency", render: (row) => row.frequency || "—" },
-                { label: "Duration", render: (row) => `${row.durationDays} Days` },
+                {
+                  label: "Days Remaining",
+                  render: (row) => {
+                    const pct = row.durationDays > 0 ? Math.round((row.daysRemaining / row.durationDays) * 100) : 0;
+                    const color = pct > 50 ? "bg-emerald-500" : pct > 20 ? "bg-amber-400" : "bg-red-400";
+                    return (
+                      <div className="space-y-1 min-w-[90px]">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-[#3D2010]">{row.daysRemaining}</span>
+                          <span className="text-[#9C8276]">/ {row.durationDays}d</span>
+                        </div>
+                        <div className="h-1.5 w-full rounded-full bg-[#F3EAE5] overflow-hidden">
+                          <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  }
+                },
               ]}
             />
           </div>
@@ -2714,8 +2830,9 @@ export default function PatientDashboard() {
               type="button"
               onClick={() => {
                 setIsFeedbackModalOpen(false);
-                // Mark prompted in localStorage so it never triggers again for this encounter
-                localStorage.setItem('feedback_completed_prompted_' + feedbackForm.encounterId, 'true');
+                if (feedbackForm.encounterId) {
+                  localStorage.setItem('feedback_clinical_seen_' + feedbackForm.encounterId, 'true');
+                }
               }}
               className="absolute right-4 top-4 rounded-full p-1.5 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors"
             >
@@ -2765,7 +2882,9 @@ export default function PatientDashboard() {
                   type="button"
                   onClick={() => {
                     setIsFeedbackModalOpen(false);
-                    localStorage.setItem('feedback_completed_prompted_' + feedbackForm.encounterId, 'true');
+                    if (feedbackForm.encounterId) {
+                      localStorage.setItem('feedback_clinical_seen_' + feedbackForm.encounterId, 'true');
+                    }
                   }}
                   className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-bold text-gray-500 hover:bg-gray-50 font-sans"
                 >
@@ -2790,7 +2909,12 @@ export default function PatientDashboard() {
           <div className="bg-white rounded-3xl border border-[#F3EAE5] shadow-2xl p-6 sm:p-8 max-w-md w-full relative animate-in zoom-in-95 duration-200">
             <button 
               type="button"
-              onClick={() => setIsTechFeedbackModalOpen(false)}
+              onClick={() => {
+                setIsTechFeedbackModalOpen(false);
+                if (techFeedbackForm.encounterId) {
+                  localStorage.setItem('feedback_tech_seen_' + techFeedbackForm.encounterId, 'true');
+                }
+              }}
               className="absolute right-4 top-4 rounded-full p-1.5 text-[#8B7469] hover:bg-[#FFF4EC] hover:text-[#D97757] transition-colors"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -2832,7 +2956,12 @@ export default function PatientDashboard() {
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setIsTechFeedbackModalOpen(false)}
+                  onClick={() => {
+                    setIsTechFeedbackModalOpen(false);
+                    if (techFeedbackForm.encounterId) {
+                      localStorage.setItem('feedback_tech_seen_' + techFeedbackForm.encounterId, 'true');
+                    }
+                  }}
                   className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-bold text-gray-500 hover:bg-gray-50 font-sans"
                 >
                   Skip

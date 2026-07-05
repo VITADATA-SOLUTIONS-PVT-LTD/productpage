@@ -9,8 +9,10 @@ const MONTHS = [
 const YEARS = Array.from({ length: 11 }, (_, i) => 2022 + i); // 2022 to 2032
 
 export default function DashboardCalendar({ events = [] }) {
-  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
-  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+  const today = new Date();
+  const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const [currentMonth, setCurrentMonth] = useState(today.getMonth());
+  const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [selectedDate, setSelectedDate] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -57,6 +59,7 @@ export default function DashboardCalendar({ events = [] }) {
         dayNumber: i,
         dateString,
         isCurrentMonth: true,
+        isToday: dateString === todayString,
         hasEvents: dayEvents.length > 0,
         events: dayEvents
       });
@@ -161,20 +164,27 @@ export default function DashboardCalendar({ events = [] }) {
             onClick={() => handleDayClick(day)}
             disabled={!day.hasEvents}
             className={`flex flex-col items-center justify-center h-10 w-full rounded-xl transition-all relative ${
-              day.hasEvents 
-                ? 'hover:bg-[#FFF1E8] cursor-pointer' 
+              day.isToday
+                ? 'bg-[#3D2010] cursor-pointer'
+                : day.hasEvents
+                ? 'hover:bg-[#FFF1E8] cursor-pointer'
                 : 'cursor-default opacity-80'
             }`}
           >
-            <span className={`text-xs font-semibold ${
-              day.isCurrentMonth 
-                ? 'text-[#3D2010]' 
+            <span className={`text-xs font-bold ${
+              day.isToday
+                ? 'text-white'
+                : day.isCurrentMonth
+                ? 'text-[#3D2010]'
                 : 'text-gray-400'
             }`}>
               {day.dayNumber}
             </span>
-            {day.hasEvents && (
+            {day.hasEvents && !day.isToday && (
               <span className="absolute bottom-1 w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
+            )}
+            {day.hasEvents && day.isToday && (
+              <span className="absolute bottom-1 w-1.5 h-1.5 bg-[#D97757] rounded-full" />
             )}
           </button>
         ))}

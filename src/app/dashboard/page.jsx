@@ -1484,6 +1484,7 @@ export default function AdminDashboard() {
 
   const [notifications, setNotifications] = useState([]);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [data, setData] = useState(null);
 
   useEffect(() => {
     const handleDocumentClick = (e) => {
@@ -1499,9 +1500,16 @@ export default function AdminDashboard() {
   }, []);
 
 
-  // IMPORTANT: `data` must be declared before this effect to avoid
-  // `ReferenceError: Cannot access 'data' before initialization`.
-
+  useEffect(() => {
+    if (data?.profile) {
+      setEditForm({
+        firstName: data.profile.firstName || "",
+        lastName: data.profile.lastName || "",
+        phoneNumber: data.profile.phoneNumber || "",
+        emergencyContact: data.profile.emergencyContact || "",
+      });
+    }
+  }, [data, isProfileModalOpen]);
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
@@ -1523,7 +1531,7 @@ export default function AdminDashboard() {
       if (!res.ok) throw new Error(resData.message || "Failed to update profile");
 
       setIsProfileModalOpen(false);
-      
+
       // Force reload data
       loadDashboard(true);
     } catch (err) {
@@ -1532,19 +1540,6 @@ export default function AdminDashboard() {
       setSavingSettings(false);
     }
   };
-
-  const [data, setData] = useState(null);
-
-  useEffect(() => {
-    if (data?.profile) {
-      setEditForm({
-        firstName: data.profile.firstName || "",
-        lastName: data.profile.lastName || "",
-        phoneNumber: data.profile.phoneNumber || "",
-        emergencyContact: data.profile.emergencyContact || "",
-      });
-    }
-  }, [data, isProfileModalOpen]);
 
   const fetchNotifications = useCallback(async () => {
     const token = localStorage.getItem("adminToken");
