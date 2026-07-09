@@ -122,7 +122,7 @@ export default function ResetPassword() {
             </div>
             <h2 className="text-lg font-bold text-gray-900 mb-1">Check your inbox</h2>
             <p className="text-sm text-gray-500 mb-6">
-              We've sent a verification code to<br />
+              We&apos;ve sent a verification code to<br />
               <span className="font-medium text-gray-700">{email}</span>
             </p>
             

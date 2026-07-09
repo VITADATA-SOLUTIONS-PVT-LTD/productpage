@@ -12,7 +12,9 @@ const navItems = [
   "Book Appointment",
   "Appointments",
   "Patients",
+  "Payments",
 ];
+
 
 const apiBaseUrl =
   process.env.NEXT_PUBLIC_URL ||
@@ -112,7 +114,13 @@ function SectionHeader({ title, description, action }) {
 function DataTable({ columns, rows, keyFor, emptyMessage }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [prevSearchQuery, setPrevSearchQuery] = useState("");
   const itemsPerPage = 10;
+
+  if (searchQuery !== prevSearchQuery) {
+    setPrevSearchQuery(searchQuery);
+    setCurrentPage(1);
+  }
 
   const filteredRows = React.useMemo(() => {
     if (!searchQuery) return rows;
@@ -130,10 +138,6 @@ function DataTable({ columns, rows, keyFor, emptyMessage }) {
       return Object.values(row).some((val) => searchVal(val));
     });
   }, [rows, searchQuery]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery]);
 
   const totalPages = Math.ceil(filteredRows.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -224,16 +228,14 @@ function DataTable({ columns, rows, keyFor, emptyMessage }) {
 function AutocompleteSelect({ label, value, onChange, options, placeholder, required }) {
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
+  const [prevValue, setPrevValue] = useState(value);
   
   const selectedOption = options.find((opt) => opt.id === value);
   
-  useEffect(() => {
-    if (selectedOption) {
-      setQuery(selectedOption.name);
-    } else {
-      setQuery("");
-    }
-  }, [value, selectedOption]);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setQuery(selectedOption ? selectedOption.name : "");
+  }
 
   const filteredOptions = options.filter((opt) =>
     opt.name.toLowerCase().includes(query.toLowerCase())
@@ -328,6 +330,8 @@ export default function ReceptionistDashboard() {
     phoneNumber: "",
     emergencyContact: "",
   });
+  const [prevProfile, setPrevProfile] = useState(null);
+  const [prevIsProfileModalOpen, setPrevIsProfileModalOpen] = useState(false);
 
 
   const [loading, setLoading] = useState(true);
@@ -341,6 +345,47 @@ export default function ReceptionistDashboard() {
   const [appointments, setAppointments] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [appointmentFilterDate, setAppointmentFilterDate] = useState(new Date().toISOString().split("T")[0]);
+  
+  // Payment States
+  const [payments, setPayments] = useState([]);
+  const [paymentFilterDate, setPaymentFilterDate] = useState(new Date().toISOString().split("T")[0]);
+  const [paymentTab, setPaymentTab] = useState("all");
+  const [paymentLastLoaded, setPaymentLastLoaded] = useState(null);
+
+  const paymentsForDate = useMemo(() => {
+    return payments.filter(p => {
+      const pDate = p.transactionDate || p.paidAt || p.createdAt;
+      if (!pDate) return false;
+      const formattedPDate = pDate.split("T")[0];
+      if (formattedPDate !== paymentFilterDate) return false;
+      
+      if (paymentTab === "pending" && p.status !== "PENDING") return false;
+      return true;
+    });
+  }, [payments, paymentFilterDate, paymentTab]);
+
+  const fetchPayments = useCallback(async () => {
+    const token = localStorage.getItem("receptionistToken");
+    if (!token || !apiBaseUrl) return;
+    try {
+      const res = await fetch(`${apiBaseUrl}/payments?date=${paymentFilterDate}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPayments(Array.isArray(data) ? data : []);
+        setPaymentLastLoaded(new Date());
+      }
+    } catch (e) {
+      console.error("Failed to fetch payments:", e);
+    }
+  }, [paymentFilterDate]);
+
+  useEffect(() => {
+    if (activeNav === "Payments") {
+      Promise.resolve().then(fetchPayments);
+    }
+  }, [activeNav, paymentFilterDate, fetchPayments]);
   
   // Form States
   const [patientForm, setPatientForm] = useState({
@@ -393,7 +438,7 @@ export default function ReceptionistDashboard() {
   }, []);
 
   useEffect(() => {
-    fetchNotifications();
+    Promise.resolve().then(fetchNotifications);
   }, [fetchNotifications]);
 
   const markAsRead = async (id) => {
@@ -424,7 +469,9 @@ export default function ReceptionistDashboard() {
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
 
 
-  useEffect(() => {
+  if (profile !== prevProfile || isProfileModalOpen !== prevIsProfileModalOpen) {
+    setPrevProfile(profile);
+    setPrevIsProfileModalOpen(isProfileModalOpen);
     if (profile) {
       setEditForm({
         firstName: profile.firstName || "",
@@ -433,7 +480,7 @@ export default function ReceptionistDashboard() {
         emergencyContact: profile.emergencyContact || "",
       });
     }
-  }, [profile, isProfileModalOpen]);
+  }
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
@@ -1508,18 +1555,18 @@ export default function ReceptionistDashboard() {
 
   const renderBookAppointment = () => {
     const isPatientVerified = searchStatus === "found" || searchStatus === "not_found";
-    const filteredDoctors = selectedSpecialty 
-      ? doctors.filter(doc => doc.specialization === selectedSpecialty)
+    const filteredDoctors = selectedSpecialty
+      ? doctors.filter((doc) => doc.specialization === selectedSpecialty)
       : [];
 
     return (
       <div className="max-w-2xl bg-white rounded-2xl border border-[#EEDFD7] p-6 shadow-sm">
         <h2 className="text-xl font-bold text-[#3D2010] mb-4">Book Patient Appointment</h2>
-        
+
         {/* Step 1: Patient Search & verification */}
         <div className="mb-6 p-4 rounded-xl bg-[#FFF9F6] border border-[#F3EAE5] space-y-4">
           <h3 className="text-sm font-bold text-[#3D2010] uppercase tracking-wider mb-2 font-sans">1. Verify / Find Patient</h3>
-          
+
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-xs font-semibold text-[#554238] mb-1">Phone Number</label>
@@ -1528,7 +1575,7 @@ export default function ReceptionistDashboard() {
                 placeholder="e.g. +919876543210"
                 className="w-full rounded-xl border border-[#E3D4CC] px-4 py-2 text-sm focus:border-[#D97757] focus:outline-none"
                 value={searchPhone}
-                onChange={e => {
+                onChange={(e) => {
                   setSearchPhone(e.target.value);
                   if (searchStatus !== "idle") handleClearPatientSearch();
                 }}
@@ -1542,7 +1589,7 @@ export default function ReceptionistDashboard() {
                 placeholder="patient@example.com"
                 className="w-full rounded-xl border border-[#E3D4CC] px-4 py-2 text-sm focus:border-[#D97757] focus:outline-none"
                 value={searchEmail}
-                onChange={e => {
+                onChange={(e) => {
                   setSearchEmail(e.target.value);
                   if (searchStatus !== "idle") handleClearPatientSearch();
                 }}
@@ -1590,7 +1637,7 @@ export default function ReceptionistDashboard() {
                     required
                     className="w-full rounded-lg border border-[#E3D4CC] px-3 py-2 text-xs focus:border-[#D97757] focus:outline-none text-gray-800"
                     value={newPatientForm.firstName}
-                    onChange={e => setNewPatientForm({ ...newPatientForm, firstName: e.target.value })}
+                    onChange={(e) => setNewPatientForm({ ...newPatientForm, firstName: e.target.value })}
                   />
                 </div>
                 <div>
@@ -1600,7 +1647,7 @@ export default function ReceptionistDashboard() {
                     required
                     className="w-full rounded-lg border border-[#E3D4CC] px-3 py-2 text-xs focus:border-[#D97757] focus:outline-none text-gray-800"
                     value={newPatientForm.lastName}
-                    onChange={e => setNewPatientForm({ ...newPatientForm, lastName: e.target.value })}
+                    onChange={(e) => setNewPatientForm({ ...newPatientForm, lastName: e.target.value })}
                   />
                 </div>
                 <div>
@@ -1610,7 +1657,7 @@ export default function ReceptionistDashboard() {
                     required
                     className="w-full rounded-lg border border-[#E3D4CC] px-3 py-2 text-xs focus:border-[#D97757] focus:outline-none text-gray-800"
                     value={newPatientForm.dob}
-                    onChange={e => setNewPatientForm({ ...newPatientForm, dob: e.target.value })}
+                    onChange={(e) => setNewPatientForm({ ...newPatientForm, dob: e.target.value })}
                   />
                 </div>
               </div>
@@ -1621,7 +1668,7 @@ export default function ReceptionistDashboard() {
         {/* Step 2: Appointment Details */}
         <form onSubmit={handleBookAppointment} className={`space-y-4 ${!isPatientVerified ? "opacity-40 pointer-events-none" : ""}`}>
           <h3 className="text-sm font-bold text-[#3D2010] uppercase tracking-wider mb-2 font-sans">2. Appointment Information</h3>
-          
+
           <div>
             <AutocompleteSelect
               label="Select Doctor Type"
@@ -1630,10 +1677,7 @@ export default function ReceptionistDashboard() {
                 setSelectedSpecialty(val);
                 setBookingForm({ ...bookingForm, doctorId: "" });
               }}
-              options={specialties.map(spec => ({
-                id: spec,
-                name: spec
-              }))}
+              options={specialties.map((spec) => ({ id: spec, name: spec }))}
               placeholder="Type to search specialty (e.g. Cardiology, Orthopedics)..."
               required={isPatientVerified}
             />
@@ -1644,9 +1688,9 @@ export default function ReceptionistDashboard() {
               label="Select Doctor"
               value={bookingForm.doctorId}
               onChange={(val) => setBookingForm({ ...bookingForm, doctorId: val })}
-              options={filteredDoctors.map(d => ({
+              options={filteredDoctors.map((d) => ({
                 id: d.doctorId,
-                name: `Dr. ${fullName(d.user)} (${d.specialization})`
+                name: `Dr. ${fullName(d.user)} (${d.specialization})`,
               }))}
               placeholder={selectedSpecialty ? "Type to search clinician..." : "Please select specialty first"}
               required={isPatientVerified}
@@ -1659,7 +1703,7 @@ export default function ReceptionistDashboard() {
               <select
                 className="w-full rounded-xl border border-[#E3D4CC] bg-white px-4 py-2.5 text-sm focus:border-[#D97757] focus:outline-none"
                 value={bookingForm.visitType}
-                onChange={e => setBookingForm({ ...bookingForm, visitType: e.target.value })}
+                onChange={(e) => setBookingForm({ ...bookingForm, visitType: e.target.value })}
               >
                 <option value="OPD">OPD</option>
                 <option value="IPD">IPD</option>
@@ -1673,7 +1717,7 @@ export default function ReceptionistDashboard() {
                 className="w-full rounded-xl border border-[#E3D4CC] px-4 py-2.5 text-sm focus:border-[#D97757] focus:outline-none"
                 value={bookingDate}
                 min={new Date().toISOString().split("T")[0]}
-                onChange={e => setBookingDate(e.target.value)}
+                onChange={(e) => setBookingDate(e.target.value)}
                 required={isPatientVerified}
                 disabled={!bookingForm.doctorId}
               />
@@ -1689,7 +1733,7 @@ export default function ReceptionistDashboard() {
                 <div className="text-xs text-red-500 font-semibold">No slots available for this clinician on selected date.</div>
               ) : (
                 <div className="grid grid-cols-4 gap-2">
-                  {slots.map(s => (
+                  {slots.map((s) => (
                     <button
                       key={s.time}
                       type="button"
@@ -1718,7 +1762,7 @@ export default function ReceptionistDashboard() {
               rows={3}
               placeholder="Primary symptoms or reason for scheduling..."
               value={bookingForm.reason}
-              onChange={e => setBookingForm({ ...bookingForm, reason: e.target.value })}
+              onChange={(e) => setBookingForm({ ...bookingForm, reason: e.target.value })}
             />
           </div>
 
@@ -1734,12 +1778,84 @@ export default function ReceptionistDashboard() {
     );
   };
 
+
+
+
+  const renderPayments = () => {
+    const consultationDate = paymentFilterDate;
+    const tabRows = paymentsForDate;
+
+    return (
+      <>
+        <SectionHeader
+          title="Payments"
+          description="Payments generated for the selected date"
+          action={
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-semibold text-[#554238]">Consultation Date:</span>
+              <input
+                type="date"
+                value={paymentFilterDate}
+                onChange={(e) => setPaymentFilterDate(e.target.value)}
+                className="rounded-xl border border-[#E3D4CC] px-4 py-2 text-sm text-[#3D2010] focus:border-[#D97757] focus:outline-none"
+              />
+              <button
+                onClick={() => setPaymentFilterDate(new Date().toISOString().split("T")[0])}
+                className="text-xs font-semibold text-[#D97757] hover:underline"
+              >
+                Reset to Today
+              </button>
+            </div>
+          }
+        />
+
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex gap-2 rounded-2xl border border-[#EEDFD7] bg-white p-2">
+            {[
+              { key: "all", label: "All Payments" },
+              { key: "pending", label: "Pending Payments" },
+            ].map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setPaymentTab(t.key)}
+                className={`rounded-xl px-4 py-2 text-xs font-bold transition-colors ${
+                  paymentTab === t.key ? "bg-[#FFF1E8] text-[#D97757]" : "text-[#806B61] hover:bg-[#FFF9F5]"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          {paymentLastLoaded && (
+            <div className="text-[11px] font-medium text-[#9C8276]">Last updated: {formatDate(paymentLastLoaded)}</div>
+          )}
+        </div>
+
+        <DataTable
+          rows={paymentsForDate}
+          keyFor={(row, idx) => row.paymentId || `${row.invoiceId}-${idx}`}
+          emptyMessage={paymentTab === "pending" ? "No pending payments for this date." : "No payments for this date."}
+          columns={[
+            { label: "Invoice", render: (row) => <span className="font-semibold text-[#3D2010]">{row.invoice?.invoiceNumber || row.invoiceNumber || row.invoiceId || "—"}</span> },
+            { label: "Patient", render: (row) => fullName(row.invoice?.patient?.user || row.patient?.user || row.patientUser || row.patient || {}) },
+            { label: "Amount", render: (row) => <span className="font-bold text-[#D97757]">₹ {row.amount}</span> },
+            { label: "Paid At", render: (row) => formatDate(row.transactionDate || row.paidAt || row.createdAt) },
+            { label: "Status", render: (row) => <StatusBadge value={row.status} /> },
+          ]}
+        />
+      </>
+    );
+  };
+
   const renderActiveView = () => {
     const views = {
       Dashboard: renderOverview(),
       "Register Patient": renderRegisterPatient(),
       "Book Appointment": renderBookAppointment(),
+      Payments: renderPayments(),
       Appointments: (
+
+
         <>
           <SectionHeader description="Full log of clinical encounters linked to your Hospital." />
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-[#EEDFD7] bg-white p-4 shadow-sm">

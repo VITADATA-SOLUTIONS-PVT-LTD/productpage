@@ -120,7 +120,13 @@ function SectionHeader({ title, description, action }) {
 function DataTable({ columns, rows, keyFor, emptyMessage }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [prevSearchQuery, setPrevSearchQuery] = useState("");
   const itemsPerPage = 10;
+
+  if (searchQuery !== prevSearchQuery) {
+    setPrevSearchQuery(searchQuery);
+    setCurrentPage(1);
+  }
 
   const filteredRows = React.useMemo(() => {
     if (!searchQuery) return rows;
@@ -138,10 +144,6 @@ function DataTable({ columns, rows, keyFor, emptyMessage }) {
       return Object.values(row).some((val) => searchVal(val));
     });
   }, [rows, searchQuery]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery]);
 
   const totalPages = Math.ceil(filteredRows.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -232,16 +234,14 @@ function DataTable({ columns, rows, keyFor, emptyMessage }) {
 function AutocompleteSelect({ label, value, onChange, options, placeholder, required }) {
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
+  const [prevValue, setPrevValue] = useState(value);
   
   const selectedOption = options.find((opt) => opt.id === value);
   
-  useEffect(() => {
-    if (selectedOption) {
-      setQuery(selectedOption.name);
-    } else {
-      setQuery("");
-    }
-  }, [value, selectedOption]);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setQuery(selectedOption ? selectedOption.name : "");
+  }
 
   const filteredOptions = options.filter((opt) =>
     opt.name.toLowerCase().includes(query.toLowerCase())
@@ -450,7 +450,7 @@ export default function PatientDashboard() {
   }, []);
 
   useEffect(() => {
-    fetchNotifications();
+    Promise.resolve().then(fetchNotifications);
   }, [fetchNotifications]);
 
   const markAsRead = async (id) => {
@@ -502,8 +502,12 @@ export default function PatientDashboard() {
     bloodGroup: "",
     chronicConditions: "",
   });
+  const [prevProfile, setPrevProfile] = useState(null);
+  const [prevIsProfileModalOpen, setPrevIsProfileModalOpen] = useState(false);
 
-  useEffect(() => {
+  if (profile !== prevProfile || isProfileModalOpen !== prevIsProfileModalOpen) {
+    setPrevProfile(profile);
+    setPrevIsProfileModalOpen(isProfileModalOpen);
     if (profile) {
       setEditForm({
         firstName: profile.firstName || "",
@@ -516,7 +520,7 @@ export default function PatientDashboard() {
         chronicConditions: profile.patient?.chronicConditions ? profile.patient.chronicConditions.join(", ") : "",
       });
     }
-  }, [profile, isProfileModalOpen]);
+  }
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
@@ -988,7 +992,6 @@ export default function PatientDashboard() {
     loadData();
   }, [loadData]);
 
-  // Trigger Clinical Feedback Modal once per completed encounter (most recent)
   useEffect(() => {
     if (appointments && appointments.length > 0) {
       // Pick the most recently completed encounter
@@ -1001,14 +1004,16 @@ export default function PatientDashboard() {
         if (!encId) return;
         const alreadySeen = localStorage.getItem('feedback_clinical_seen_' + encId);
         if (!alreadySeen) {
-          setFeedbackForm({
-            encounterId: encId,
-            doctorRating: 5,
-            hospitalRating: 5,
-            receptionistRating: 5,
-            comment: ""
+          Promise.resolve().then(() => {
+            setFeedbackForm({
+              encounterId: encId,
+              doctorRating: 5,
+              hospitalRating: 5,
+              receptionistRating: 5,
+              comment: ""
+            });
+            setIsFeedbackModalOpen(true);
           });
-          setIsFeedbackModalOpen(true);
         }
       }
     }

@@ -112,7 +112,9 @@ export default function PatientLoginPage() {
         const params = new URLSearchParams(window.location.search);
         const err = params.get('error');
         if (err) {
-            setError(decodeURIComponent(err));
+            Promise.resolve().then(() => {
+                setError(decodeURIComponent(err));
+            });
         }
     }, []);
 
@@ -388,7 +390,7 @@ export default function PatientLoginPage() {
                     </button>
 
                     <div className="text-center mb-4">
-                        <span className="text-xs text-gray-500 font-sans">Don't have an account? </span>
+                        <span className="text-xs text-gray-500 font-sans">Don&apos;t have an account? </span>
                         <Link href="/signup" className="text-xs font-bold text-[#D97757] hover:underline">
                             Register/Sign Up
                         </Link>

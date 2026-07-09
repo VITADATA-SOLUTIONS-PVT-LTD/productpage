@@ -22,7 +22,10 @@ const GoogleIcon = () => (
 );
 
 export default function DoctorLoginPage() {
+    const [loginType, setLoginType] = useState("phone"); // "phone" or "email"
     const [phoneNumber, setPhoneNumber] = useState("");
+    const [countryCode, setCountryCode] = useState("+91");
+    const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -109,7 +112,9 @@ export default function DoctorLoginPage() {
         const params = new URLSearchParams(window.location.search);
         const err = params.get('error');
         if (err) {
-            setError(decodeURIComponent(err));
+            Promise.resolve().then(() => {
+                setError(decodeURIComponent(err));
+            });
         }
     }, []);
 
@@ -125,12 +130,18 @@ export default function DoctorLoginPage() {
                 throw new Error("API URL is not configured");
             }
 
+            const formattedPhone = loginType === 'phone' ? `${countryCode}${phoneNumber.trim()}` : '';
+
             const response = await fetch(`${apiBaseUrl}/auth/login/password`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ phoneNumber, password }),
+                body: JSON.stringify({
+                    phoneNumber: loginType === 'phone' ? formattedPhone : undefined,
+                    email: loginType === 'email' ? email.trim().toLowerCase() : undefined,
+                    password
+                }),
             });
 
             const data = await response.json();
@@ -182,19 +193,68 @@ export default function DoctorLoginPage() {
                     </div>
                 )}
 
+                {/* Login Method Toggle */}
+                <div className="w-full flex border-b border-[#F3EAE5] mb-4">
+                    <button
+                        type="button"
+                        onClick={() => { setLoginType("phone"); setError(""); }}
+                        className={`flex-1 pb-2 text-xs font-bold uppercase tracking-wider transition-colors ${loginType === 'phone' ? 'text-[#D97757] border-b-2 border-[#D97757]' : 'text-gray-400'}`}
+                    >
+                        Phone Number
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => { setLoginType("email"); setError(""); }}
+                        className={`flex-1 pb-2 text-xs font-bold uppercase tracking-wider transition-colors ${loginType === 'email' ? 'text-[#D97757] border-b-2 border-[#D97757]' : 'text-gray-400'}`}
+                    >
+                        Email Address
+                    </button>
+                </div>
+
                 {/* Form */}
                 <form className="w-full" onSubmit={handleSubmit}>
-                    <div className="mb-3.5">
-                        <label className="block text-[#374151] text-[12px] sm:text-[13px] font-medium mb-1.5">Phone Number</label>
-                        <input
-                            type="tel"
-                            placeholder="Enter phone number, e.g. +919900000101"
-                            className="w-full px-3 py-2 sm:px-4 sm:py-2.5 rounded-lg border border-[rgba(255,204,172,0.4)] focus:outline-none focus:ring-2 focus:ring-[#D97757]/20 focus:border-[#D97757] text-[13px] sm:text-[14px] text-[#3D2010]"
-                            value={phoneNumber}
-                            onChange={(e) => setPhoneNumber(e.target.value)}
-                            required
-                        />
-                    </div>
+                    {loginType === 'phone' ? (
+                        <div className="mb-3.5">
+                            <label className="block text-[#374151] text-[12px] sm:text-[13px] font-medium mb-1.5">Phone Number</label>
+                            <div className="flex gap-2">
+                                <select
+                                    value={countryCode}
+                                    onChange={(e) => setCountryCode(e.target.value)}
+                                    className="px-2.5 py-2 rounded-lg border border-[rgba(255,204,172,0.4)] bg-white text-[13px] sm:text-[14px] text-[#3D2010] outline-none"
+                                >
+                                    <option value="+91">+91 (IN)</option>
+                                    <option value="+1">+1 (US)</option>
+                                    <option value="+44">+44 (UK)</option>
+                                    <option value="+971">+971 (AE)</option>
+                                </select>
+                                <input
+                                    type="tel"
+                                    placeholder="9876543210"
+                                    className="flex-1 px-3 py-2 rounded-lg border border-[rgba(255,204,172,0.4)] focus:outline-none focus:ring-2 focus:ring-[#D97757]/20 focus:border-[#D97757] text-[13px] sm:text-[14px] text-[#3D2010]"
+                                    value={phoneNumber}
+                                    onChange={(e) => {
+                                        const val = e.target.value.replace(/\D/g, ""); // Keep only digits
+                                        if (val.length <= 10) {
+                                            setPhoneNumber(val);
+                                        }
+                                    }}
+                                    required
+                                />
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="mb-3.5">
+                            <label className="block text-[#374151] text-[12px] sm:text-[13px] font-medium mb-1.5">Email Address</label>
+                            <input
+                                type="email"
+                                placeholder="doctor@example.com"
+                                className="w-full px-3 py-2 sm:px-4 sm:py-2.5 rounded-lg border border-[rgba(255,204,172,0.4)] focus:outline-none focus:ring-2 focus:ring-[#D97757]/20 focus:border-[#D97757] text-[13px] sm:text-[14px] text-[#3D2010]"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                            />
+                        </div>
+                    )}
 
                     <div className="mb-4">
                         <label className="block text-[#374151] text-[12px] sm:text-[13px] font-medium mb-1.5">Password</label>
@@ -231,7 +291,7 @@ export default function DoctorLoginPage() {
                     </button>
 
                     <div className="text-center mb-4">
-                        <span className="text-xs text-gray-500 font-sans">Don't have an account? </span>
+                        <span className="text-xs text-gray-500 font-sans">Don&apos;t have an account? </span>
                         <Link href="/signup" className="text-xs font-bold text-[#D97757] hover:underline">
                             Apply/Sign Up
                         </Link>
