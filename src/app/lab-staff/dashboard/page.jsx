@@ -139,7 +139,9 @@ function DataTable({ columns, rows, keyFor, emptyMessage }) {
   }, [rows, searchQuery]);
 
   useEffect(() => {
-    setCurrentPage(1);
+    Promise.resolve().then(() => {
+      setCurrentPage(1);
+    });
   }, [searchQuery]);
 
   const totalPages = Math.ceil(filteredRows.length / itemsPerPage);
@@ -299,11 +301,13 @@ export default function LabStaffDashboard() {
   useEffect(() => {
     // Prevent init-order crashes during SSR/prerender.
     if (!profile) return;
-    setEditForm({
-      firstName: profile.firstName || "",
-      lastName: profile.lastName || "",
-      phoneNumber: profile.phoneNumber || "",
-      emergencyContact: profile.emergencyContact || "",
+    Promise.resolve().then(() => {
+      setEditForm({
+        firstName: profile.firstName || "",
+        lastName: profile.lastName || "",
+        phoneNumber: profile.phoneNumber || "",
+        emergencyContact: profile.emergencyContact || "",
+      });
     });
   }, [profile, isProfileModalOpen]);
 
@@ -324,7 +328,9 @@ export default function LabStaffDashboard() {
   }, []);
 
   useEffect(() => {
-    fetchNotifications();
+    Promise.resolve().then(() => {
+      fetchNotifications();
+    });
   }, [fetchNotifications]);
 
   const markAsRead = async (id) => {

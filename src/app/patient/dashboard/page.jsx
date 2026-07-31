@@ -13,6 +13,7 @@ const navItems = [
   "Medical Records",
   "Medications & Refills",
   "Payments",
+  "Locker",
 ];
 
 const apiBaseUrl =
@@ -399,6 +400,140 @@ export default function PatientDashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+
+  // Locker States
+  const [vaultFiles, setVaultFiles] = useState([]);
+  const [loadingVault, setLoadingVault] = useState(false);
+  const [uploadingVaultFile, setUploadingVaultFile] = useState(false);
+  const [vaultForm, setVaultForm] = useState({
+    fileName: "",
+    file: null,
+  });
+  const fileInputRef = useRef(null);
+  // Ensures the feedback prompt only shows once per page mount, even if
+  // appointments state re-loads multiple times during the session.
+  const feedbackShownRef = useRef(false);
+  const [lockerFilter, setLockerFilter] = useState("all");
+  const [lockerSearchQuery, setLockerSearchQuery] = useState("");
+
+  const filteredVaultFiles = useMemo(() => {
+    return vaultFiles.filter(file => {
+      if (lockerSearchQuery) {
+        const query = lockerSearchQuery.toLowerCase();
+        const matchesName = file.fileName?.toLowerCase().includes(query);
+        const matchesMime = file.mimeType?.toLowerCase().includes(query);
+        if (!matchesName && !matchesMime) return false;
+      }
+
+      const name = file.fileName?.toLowerCase() || "";
+      if (lockerFilter === "prescription") {
+        return name.includes("prescription") || name.includes("rx");
+      }
+      if (lockerFilter === "report") {
+        return name.includes("report") || name.includes("lab") || name.includes("test") || name.includes("result");
+      }
+      if (lockerFilter === "other") {
+        const isPrescription = name.includes("prescription") || name.includes("rx");
+        const isReport = name.includes("report") || name.includes("lab") || name.includes("test") || name.includes("result");
+        return !isPrescription && !isReport;
+      }
+      return true;
+    });
+  }, [vaultFiles, lockerFilter, lockerSearchQuery]);
+
+  const fetchVaultData = useCallback(async () => {
+    const token = localStorage.getItem("patientToken");
+    if (!token || !apiBaseUrl) return;
+    setLoadingVault(true);
+    try {
+      const res = await fetch(`${apiBaseUrl}/users/vault`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const result = await res.json();
+        const list = result.data || result.vaults || [];
+        setVaultFiles(Array.isArray(list) ? list : []);
+      }
+    } catch (e) {
+      console.error("Failed to fetch vault data:", e);
+    } finally {
+      setLoadingVault(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeNav === "Locker") {
+      Promise.resolve().then(fetchVaultData);
+    }
+  }, [activeNav, fetchVaultData]);
+
+  const handleUploadVaultFile = async (e) => {
+    e.preventDefault();
+    if (!vaultForm.file) {
+      alert("Please select a file to upload.");
+      return;
+    }
+    setError("");
+    setSuccessMsg("");
+    setUploadingVaultFile(true);
+
+    const token = localStorage.getItem("patientToken");
+    const formData = new FormData();
+    formData.append("file", vaultForm.file);
+    if (vaultForm.fileName.trim()) {
+      formData.append("fileName", vaultForm.fileName.trim());
+    }
+
+    try {
+      const res = await fetch(`${apiBaseUrl}/users/uploadVault`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to upload file");
+
+      setSuccessMsg("File uploaded successfully to your locker!");
+      setVaultForm({ fileName: "", file: null });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      
+      fetchVaultData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUploadingVaultFile(false);
+    }
+  };
+
+  const handleDeleteVaultFile = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this file from your locker?")) {
+      return;
+    }
+    setError("");
+    setSuccessMsg("");
+    const token = localStorage.getItem("patientToken");
+    
+    setVaultFiles(prev => prev.filter(v => v.id !== id));
+
+    try {
+      const res = await fetch(`${apiBaseUrl}/users/vault/${id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to delete file");
+
+      setSuccessMsg("File deleted successfully.");
+      fetchVaultData();
+    } catch (err) {
+      setError(err.message);
+      fetchVaultData();
+    }
+  };
 
 
   const [loading, setLoading] = useState(true);
@@ -993,8 +1128,11 @@ export default function PatientDashboard() {
   }, [loadData]);
 
   useEffect(() => {
+    // Guard: only attempt once per component mount. After the first evaluation
+    // (show or skip), flip the ref so re-renders of appointments never re-trigger.
+    if (feedbackShownRef.current) return;
     if (appointments && appointments.length > 0) {
-      // Pick the most recently completed encounter
+      feedbackShownRef.current = true; // consume the one-shot chance
       const completed = appointments
         .filter(a => a.status === 'COMPLETED')
         .sort((a, b) => new Date(b.scheduledTime || 0) - new Date(a.scheduledTime || 0));
@@ -1002,6 +1140,7 @@ export default function PatientDashboard() {
         const latestEncounter = completed[0];
         const encId = latestEncounter.id || latestEncounter.encounterId;
         if (!encId) return;
+        // Per-encounter key: if skipped or submitted before, never show again
         const alreadySeen = localStorage.getItem('feedback_clinical_seen_' + encId);
         if (!alreadySeen) {
           Promise.resolve().then(() => {
@@ -2117,11 +2256,275 @@ export default function PatientDashboard() {
     );
   };
 
+  const renderLocker = () => {
+    const getFileIconAndColor = (fileName) => {
+      const ext = fileName?.split('.').pop()?.toLowerCase();
+      if (ext === 'pdf') {
+        return {
+          color: 'bg-red-50 text-red-600 border-red-100',
+          icon: (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+              <polyline points="14 2 14 8 20 8" />
+              <path d="M12 18v-6" />
+              <path d="M9 15h6" />
+            </svg>
+          )
+        };
+      }
+      if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) {
+        return {
+          color: 'bg-blue-50 text-blue-600 border-blue-100',
+          icon: (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+          )
+        };
+      }
+      return {
+        color: 'bg-[#FFF4EC] text-[#D97757] border-[#F2D7C8]',
+        icon: (
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+        )
+      };
+    };
+
+    const formatBytes = (bytes) => {
+      if (!bytes) return "—";
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / 1048576).toFixed(1)} MB`;
+    };
+
+    return (
+      <div className="space-y-6 animate-in fade-in duration-200">
+        <SectionHeader
+          title="Digital Locker"
+          description="Access, upload, and securely manage your medical prescriptions, lab reports, and identity files."
+        />
+
+        <div className="grid gap-6 lg:grid-cols-3">
+          {/* Upload panel */}
+          <div className="lg:col-span-1">
+            <div className="rounded-2xl border border-[#EEDFD7] bg-white p-5 shadow-sm space-y-4">
+              <div className="flex items-center gap-2 border-b border-[#F3EAE5] pb-3">
+                <div className="rounded-lg bg-[#FFF1E8] p-1.5 text-[#D97757]">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                </div>
+                <h3 className="text-sm font-bold text-[#3D2010] uppercase tracking-wider font-sans">Upload Document</h3>
+              </div>
+
+              <form onSubmit={handleUploadVaultFile} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#554238] mb-1.5">Select File *</label>
+                  <div className="relative flex flex-col items-center justify-center border-2 border-dashed border-[#E3D4CC] rounded-xl p-4 bg-[#FFFDFB] hover:border-[#D97757] transition-all cursor-pointer group">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      required
+                      onChange={(e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                          setVaultForm({
+                            ...vaultForm,
+                            file,
+                            fileName: vaultForm.fileName || file.name.substring(0, file.name.lastIndexOf('.')) || file.name
+                          });
+                        }
+                      }}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B7469] group-hover:text-[#D97757] transition-colors mb-2">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                      <line x1="12" y1="8" x2="12" y2="16" />
+                      <line x1="8" y1="12" x2="16" y2="12" />
+                    </svg>
+                    <span className="text-xs font-semibold text-[#3D2010]">
+                      {vaultForm.file ? vaultForm.file.name : "Click to select document"}
+                    </span>
+                    <span className="text-[10px] text-[#8B7469] mt-1">
+                      {vaultForm.file ? `${formatBytes(vaultForm.file.size)}` : "PDF, Images up to 10MB"}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#554238] mb-1.5">Custom Display Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Chest X-Ray Report Jan 2026"
+                    value={vaultForm.fileName}
+                    onChange={(e) => setVaultForm({ ...vaultForm, fileName: e.target.value })}
+                    className="w-full rounded-xl border border-[#E3D4CC] px-4 py-2.5 text-xs text-[#3D2010] placeholder-[#9C8276] outline-none focus:border-[#D97757]"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={uploadingVaultFile || !vaultForm.file}
+                  className="w-full rounded-xl bg-[#3D2010] hover:bg-[#D97757] text-white px-4 py-3 text-xs font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                >
+                  {uploadingVaultFile ? (
+                    <>
+                      <div className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                      Uploading Securely...
+                    </>
+                  ) : (
+                    "Add to Digital Locker"
+                  )}
+                </button>
+              </form>
+            </div>
+          </div>
+
+          {/* Files grid list */}
+          <div className="lg:col-span-2 space-y-5">
+            {/* Filter and search block */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-[#EEDFD7] bg-white p-3.5 shadow-sm">
+              <div className="flex flex-wrap gap-1 bg-[#FFF9F6] p-1 rounded-xl border border-[#F3EAE5]">
+                {[
+                  { key: "all", label: "All Files" },
+                  { key: "prescription", label: "Prescriptions" },
+                  { key: "report", label: "Reports" },
+                  { key: "other", label: "Other Docs" }
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setLockerFilter(tab.key)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                      lockerFilter === tab.key
+                        ? "bg-white text-[#D97757] shadow-sm"
+                        : "text-[#8B7469] hover:text-[#3D2010]"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="relative w-full sm:max-w-[200px]">
+                <input
+                  type="text"
+                  placeholder="Search locker..."
+                  value={lockerSearchQuery}
+                  onChange={(e) => setLockerSearchQuery(e.target.value)}
+                  className="w-full rounded-xl border border-[#E3D4CC] bg-white px-3.5 py-1.5 pl-8 text-xs text-[#3D2010] placeholder-[#9C8276] outline-none transition-all focus:border-[#D97757]"
+                />
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-2.5 top-2.5 text-[#8B7469]">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+              </div>
+            </div>
+
+            {/* List */}
+            {loadingVault ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="flex items-center gap-3 rounded-2xl border border-[#EEDFD7] bg-white p-4 animate-pulse">
+                    <div className="h-10 w-10 rounded-xl bg-gray-100" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3 w-2/3 bg-gray-100 rounded" />
+                      <div className="h-2.5 w-1/3 bg-gray-100 rounded" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : filteredVaultFiles.length === 0 ? (
+              <div className="rounded-2xl border border-[#EEDFD7] bg-white px-6 py-16 text-center shadow-sm">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#FFF1E8] text-[#D97757] mb-4">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                </div>
+                <h3 className="text-sm font-bold text-[#3D2010]">Locker is empty</h3>
+                <p className="mx-auto mt-1 max-w-xs text-xs text-[#8B7469]">
+                  {lockerSearchQuery || lockerFilter !== 'all'
+                    ? "No files matching the active search or category filter were found."
+                    : "No uploaded documents found. Add your reports and prescriptions to keep them stored securely."}
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {filteredVaultFiles.map((file) => {
+                  const view = getFileIconAndColor(file.fileName);
+                  return (
+                    <div
+                      key={file.id}
+                      className="group flex flex-col justify-between rounded-2xl border border-[#EEDFD7] bg-white p-4 shadow-sm hover:border-[#D97757] transition-all hover:shadow-[0_4px_16px_rgba(217,119,87,0.04)]"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${view.color}`}>
+                          {view.icon}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h4 className="truncate text-sm font-bold text-[#3D2010] leading-tight" title={file.fileName}>
+                            {file.fileName}
+                          </h4>
+                          <p className="text-[10px] text-[#9C8276] mt-1 flex flex-wrap items-center gap-1.5">
+                            <span>Uploaded: {formatDate(file.uploadedAt)}</span>
+                            <span className="inline-block h-1 w-1 rounded-full bg-[#E3D4CC]" />
+                            <span>{formatBytes(file.bytes)}</span>
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex items-center justify-end gap-2 border-t border-[#F3EAE5] pt-3">
+                        <a
+                          href={file.fileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-lg bg-[#FFF9F6] border border-[#F2D7C8] hover:bg-[#FFF1E8] text-[#D97757] px-3 py-1.5 text-xs font-semibold transition-colors flex items-center gap-1"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                            <circle cx="12" cy="12" r="3" />
+                          </svg>
+                          View File
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteVaultFile(file.id)}
+                          className="rounded-lg border border-red-100 hover:bg-red-50 text-red-500 hover:text-red-600 p-1.5 transition-colors"
+                          title="Delete file"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            <line x1="10" y1="11" x2="10" y2="17" />
+                            <line x1="14" y1="11" x2="14" y2="17" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderActiveView = () => {
     const views = {
       Dashboard: renderOverview(),
       "Book Appointment": renderBookAppointment(),
       Payments: renderPayments(),
+      Locker: renderLocker(),
       "My Appointments": (
         <>
           <SectionHeader description="Log of all appointments booked by you." />
